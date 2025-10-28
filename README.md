@@ -14,7 +14,7 @@
 To install the project, run
 
 ```bash
-pip install .
+pip install . 
 ```
 
 ## Usage

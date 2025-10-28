@@ -6,7 +6,11 @@ logging.
 """
 
 import logging
-from typing import TextIO
+from typing import TextIO, Callable
+from functools import partial
+
+from clingo.core import MessageType
+import tree_sitter as ts
 
 NOTSET = logging.NOTSET
 DEBUG = logging.DEBUG
@@ -77,3 +81,54 @@ def get_logger(name: str) -> logging.Logger:
     Get a logger with the given name.
     """
     return logging.getLogger(name)
+
+
+def log_clingo_message(message_code: MessageType, message: str, logger: logging.Logger) -> None:  # nocoverage
+    """Log clingo message at the appropriate level"""
+    clingo_fstring = "clingo: %s"
+    if message_code is MessageType.Trace:
+        logger.debug(clingo_fstring, message)
+    elif message_code is MessageType.Debug:
+        logger.debug(clingo_fstring, message)
+    elif message_code is MessageType.Info:
+        logger.info(clingo_fstring, message)
+    elif message_code is MessageType.Warn:
+        logger.warn(clingo_fstring, message)
+    elif message_code is MessageType.Error:
+        logger.error(clingo_fstring, message)
+    elif message_code is MessageType.AtomUndefined:
+        logger.info(clingo_fstring, message)
+    elif message_code is MessageType.FileIncluded:
+        logger.warn(clingo_fstring, message)
+    elif message_code is MessageType.GlobalVariable:
+        logger.info(clingo_fstring, message)
+    elif message_code is MessageType.OperationUndefined:
+        logger.info(clingo_fstring, message)
+
+
+def get_clingo_logger(
+    logger: logging.Logger,
+) -> Callable[[MessageType, str], None]:
+    """Return a callback function to be used when initializing a
+    clingo.core.Library object to log to input logger.
+
+    """
+    return partial(log_clingo_message, logger=logger)
+
+
+def log_ts_message(logtype: ts.LogType, message: str, logger: logging.Logger) -> None:
+    """Log tree-sitter message."""
+    if logtype is ts.LogType.PARSE:
+        logger.debug("tree-sitter parser: %s", message)
+    elif logtype is ts.LogType.LEX:
+        logger.debug("tree-sitter lexer: %s", message)
+
+
+def get_ts_logger(
+    logger: logging.Logger,
+) -> Callable[[ts.LogType, str], None]:
+    """Return a callback function to be used when initializing a
+    clingo.core.Library object to log to input logger.
+
+    """
+    return partial(log_ts_message, logger=logger)
