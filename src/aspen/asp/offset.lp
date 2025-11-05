@@ -26,4 +26,3 @@ return(descendent_for_byte_range(N, Start, End), Node)
 
 %% #show call/1.
 %% #show return/2.
-

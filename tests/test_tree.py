@@ -5,7 +5,7 @@ from unittest import TestCase
 import tree_sitter_clingo as ts_clingo
 from clingo.core import Library
 from clingo.symbol import Function, Number, String, Symbol, Tuple_, parse_term
-from tree_sitter import Language, Parser
+from tree_sitter import Language, Parser, Parsere
 
 from aspen.tree import AspenTree, SourceInput
 
@@ -71,14 +71,12 @@ class TestAspenTree(TestCase):
 
     def test_parse_strings(self):
         """Test parsing of input strings."""
-        self.assertParseEqualsFile(
-            clingo_lang, "a :- b.", asp_dir / "ab_reified_string.txt"
-        )
+        self.assertParseEqualsFile(clingo_lang, "a :- b.", asp_dir / "ab_reified.txt")
 
     def test_parse_files(self):
         """Test parsing of input files."""
         self.assertParseEqualsFile(
-            clingo_lang, asp_dir / "ab.lp", asp_dir / "ab_reified_string.txt"
+            clingo_lang, asp_dir / "ab.lp", asp_dir / "ab_reified.txt"
         )
 
     def test_reify_missing_node(self):
