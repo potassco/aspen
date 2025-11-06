@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import List, Literal, Optional, Sequence
 
 import tree_sitter as ts
+
+# pylint: disable=import-error,no-name-in-module
 from clingo.control import Control
 from clingo.core import Library
 from clingo.solve import Model
@@ -94,7 +96,7 @@ class AspenTree:
         elif isinstance(source, str):
             source_bytes = bytes(source, encoding)
         elif isinstance(source, Path):
-            path = source.resolve()
+            path = source.resolve().resolve()
             if not path.is_file():  # nocoverage
                 raise IOError(f"File {path} not found.")
             source_bytes = path.read_bytes()
@@ -163,7 +165,7 @@ class AspenTree:
                 stack.append((child, child_path))
         return facts
 
-    def _reify_ts_tree(self, tree: ts.Tree, source: Source):
+    def _reify_ts_tree(self, tree: ts.Tree, source: Source) -> None:
         """Reify tree-sitter tree into a set of facts."""
         root_node = tree.root_node
         root_path = Tuple_(self.lib, [])
@@ -263,7 +265,9 @@ class AspenTree:
             path_symb = Tuple_(self.lib, [path_symb, Number(self.lib, idx)])
         return path_symb
 
-    def _re_reify_changed_subtrees(self, subtrees: defaultdict[Symbol, list[ts.Node]]):
+    def _re_reify_changed_subtrees(
+        self, subtrees: defaultdict[Symbol, list[ts.Node]]
+    ) -> None:
         """Re-reify subtrees who's syntactic structure changed due to
         edit, and delete outdated facts from before edit."""
         # drop nodes to be re-reified that are descendants of other nodes to be re-reified
@@ -504,7 +508,7 @@ class AspenTree:
         initial_program: tuple[str, Sequence[Symbol]] = ("base", ()),
         util_encodings: Sequence[str] = ("all.lp",),
         control_options: Optional[Sequence[str]] = None,
-    ):
+    ) -> None:
         """Transform fact base via a meta-encoding."""
         options = control_options if control_options is not None else []
         if meta_files is not None:  # nocoverage

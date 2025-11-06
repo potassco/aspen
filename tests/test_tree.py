@@ -1,11 +1,15 @@
+"""Unit tests for module aspen.tree"""
+
 from pathlib import Path
 from typing import Optional, Sequence
 from unittest import TestCase
 
 import tree_sitter_clingo as ts_clingo
+
+# pylint: disable=import-error,no-name-in-module
 from clingo.core import Library
-from clingo.symbol import Function, Number, String, Symbol, Tuple_, parse_term
-from tree_sitter import Language, Parser, Parsere
+from clingo.symbol import String, Symbol, parse_term
+from tree_sitter import Language
 
 from aspen.tree import AspenTree, SourceInput
 
@@ -19,7 +23,9 @@ class TestAspenTree(TestCase):
 
     maxDiff = None
 
-    def assertParseEqualsFile(self, language: Language, source: SourceInput, path: Path):
+    def assert_parse_equals_file(
+        self, language: Language, source: SourceInput, path: Path
+    ):
         """Assert that parsing string of the given language results in
         symbols contained in the given file."""
         tree = AspenTree(default_language=language)
@@ -33,7 +39,7 @@ class TestAspenTree(TestCase):
         symbols.sort()
         self.assertListEqual(symbols, expected_symbols)
 
-    def assertTransformEquals(
+    def assert_transform_equals(
         self,
         *,
         language: Language,
@@ -71,21 +77,21 @@ class TestAspenTree(TestCase):
 
     def test_parse_strings(self):
         """Test parsing of input strings."""
-        self.assertParseEqualsFile(clingo_lang, "a :- b.", asp_dir / "ab_reified.txt")
+        self.assert_parse_equals_file(clingo_lang, "a :- b.", asp_dir / "ab_reified.txt")
 
     def test_parse_files(self):
         """Test parsing of input files."""
-        self.assertParseEqualsFile(
+        self.assert_parse_equals_file(
             clingo_lang, asp_dir / "ab.lp", asp_dir / "ab_reified.txt"
         )
 
     def test_reify_missing_node(self):
         """Test reification of missing node."""
-        self.assertParseEqualsFile(clingo_lang, "=2.", asp_dir / "missing_reified.txt")
+        self.assert_parse_equals_file(clingo_lang, "=2.", asp_dir / "missing_reified.txt")
 
     def test_reify_error_node(self):
         """Test reification of error node."""
-        self.assertParseEqualsFile(clingo_lang, "+a.", asp_dir / "error_reified.txt")
+        self.assert_parse_equals_file(clingo_lang, "+a.", asp_dir / "error_reified.txt")
 
     def test_path2py(self):
         """Test conversion of symbolic path to python list"""
@@ -129,7 +135,7 @@ class TestAspenTree(TestCase):
 
     def test_transform_add_vars_(self):
         """Test transformation, adding variables to atoms."""
-        self.assertTransformEquals(
+        self.assert_transform_equals(
             language=clingo_lang,
             source="a :- b.",
             meta_files=[asp_dir / "add_var.lp"],
@@ -155,7 +161,7 @@ class TestAspenTree(TestCase):
     def test_transform_spanning_ancestor(self):
         """Test that transformation succeeds when editing a node which
         has ancestors that span the same byte range."""
-        self.assertTransformEquals(
+        self.assert_transform_equals(
             language=clingo_lang,
             source=b"a.",
             meta_string='aspen(edit((s(0),(((((),0),0),0),0)),"b")).',
@@ -186,7 +192,7 @@ class TestAspenTree(TestCase):
         )
         with self.assertRaisesRegex(ValueError, error_regex):
             tree.transform(meta_string=meta_str)
-        self.assertTransformEquals(
+        self.assert_transform_equals(
             language=clingo_lang,
             source="a(b).",
             meta_files=[asp_dir / "add_var.lp"],
@@ -200,7 +206,7 @@ class TestAspenTree(TestCase):
     def test_transform_multiple_steps(self):
         """Test that transformation works as expected when multiple
         steps are defined."""
-        self.assertTransformEquals(
+        self.assert_transform_equals(
             language=clingo_lang,
             source="a :- b.",
             meta_files=[asp_dir / "rename_a_to_b.lp", asp_dir / "add_var.lp"],
@@ -229,7 +235,7 @@ class TestAspenTree(TestCase):
         """Test transform where multiline replacement occurs."""
         meta_str = """aspen(edit(N,format("{0}", (M,())))) :-
  leaf_text(N,"a"), type(M,"symbolic_atom"), child(M,L), type(L,"terms")."""
-        self.assertTransformEquals(
+        self.assert_transform_equals(
             language=clingo_lang,
             source="""
 a.

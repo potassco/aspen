@@ -10,6 +10,8 @@ from functools import partial
 from typing import Callable, TextIO
 
 import tree_sitter as ts
+
+# pylint: disable=import-error,no-name-in-module
 from clingo.core import MessageType
 
 NOTSET = logging.NOTSET
@@ -56,7 +58,10 @@ def configure_logging(stream: TextIO, level: int, use_color: bool) -> None:
 
     def format_str(color: str) -> str:
         if use_color:
-            return f"{COLORS[color]}%(levelname)s:{COLORS['GREY']}  - %(message)s{COLORS['NORMAL']}"
+            return (
+                f"{COLORS[color]}%(levelname)s:{COLORS['GREY']}"
+                f"  - %(message)s{COLORS['NORMAL']}"
+            )
         return "%(levelname)s:  - %(message)s"  # nocoverage
 
     def make_handler(level: int, color: str) -> "logging.StreamHandler[TextIO]":
