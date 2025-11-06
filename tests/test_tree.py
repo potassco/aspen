@@ -11,9 +11,11 @@ from clingo.core import Library
 from clingo.symbol import String, Symbol, parse_term
 from tree_sitter import Language
 
+import aspen
 from aspen.tree import AspenTree, SourceInput
 
-asp_dir = Path("tests", "files").resolve()
+aspen_path = Path(aspen.__file__)
+asp_dir = aspen_path.parent.parent.parent / "tests" / "files"
 lib = Library()
 clingo_lang = Language(ts_clingo.language())
 
