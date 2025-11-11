@@ -411,14 +411,14 @@ class AspenTree:
                 inserts = self.conslist2list(replacement_tup)
                 for insert in inserts:
                     # insert is a node
-                    try:
+                    if insert.match(2):
                         insert_source, insert_node = self.node_id2ts(insert)
                         start, end = insert_node.start_byte, insert_node.end_byte
                         insert_text = insert_source.source_bytes[start:end].decode(
                             insert_source.encoding
                         )
                     # insert is not a node
-                    except ValueError:
+                    else:
                         insert_text = str(insert)
                         if insert_text.startswith('"') and insert_text.endswith('"'):
                             insert_text = insert_text[1:-1]
