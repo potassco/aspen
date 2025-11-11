@@ -1,7 +1,8 @@
 """Unit tests for module aspen.tree"""
 
+import re
 from pathlib import Path
-from typing import Optional, Sequence
+from typing import Literal, Optional, Sequence
 from unittest import TestCase
 
 import tree_sitter_clingo as ts_clingo
@@ -10,7 +11,7 @@ import tree_sitter_clingo as ts_clingo
 from clingo.symbol import String, Symbol, parse_term
 from tree_sitter import Language
 
-from aspen.tree import AspenTree, SourceInput
+from aspen.tree import AspenTree, SourceInput, TransformError
 
 asp_dir = (Path(__file__) / ".." / "files").resolve()
 clingo_lang = Language(ts_clingo.language())
@@ -73,6 +74,59 @@ class TestAspenTree(TestCase):
         symbols.sort()
         self.assertListEqual(symbols, expected_symbols)
 
+    def assert_transform_logs(
+        self,
+        *,
+        log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"],
+        message2num_matches: dict[str, int],
+        language: Language,
+        source: SourceInput,
+        meta_files: Optional[Sequence[Path]] = None,
+        meta_string: Optional[str] = None,
+        initial_program: tuple[str, Sequence[Symbol]] = ("base", ()),
+        util_encodings: Sequence[str] = ("all.lp",),
+        control_options: Optional[Sequence[str]] = None,
+    ):
+        """Assert that transformation logs messages, or raises error."""
+        tree = AspenTree(default_language=language)
+        tree.parse(source)
+        with self.assertLogs("aspen.tree", level=log_level) as cm:
+            try:
+                tree.transform(
+                    meta_files=meta_files,
+                    meta_string=meta_string,
+                    initial_program=initial_program,
+                    util_encodings=util_encodings,
+                    control_options=control_options,
+                )
+            except TransformError as e:
+                if log_level != "ERROR":
+                    raise e
+                for message, expected_num in message2num_matches.items():
+                    assert_exc_msg = (
+                        f"Expected {expected_num} "
+                        "matches for exception message "
+                        f"'{message}', found "
+                    )
+                    num_exception_matches = len(re.findall(message, str(e)))
+                    self.assertEqual(
+                        num_exception_matches,
+                        expected_num,
+                        msg=assert_exc_msg + str(num_exception_matches),
+                    )
+            logs = "\n".join(cm.output)
+            for message, expected_num in message2num_matches.items():
+                assert_msg = (
+                    f"Expected {expected_num} "
+                    "matches for log message pattern "
+                    f"'{message}' in {logs}, found "
+                )
+                reo = re.compile(message)
+                num_log_matches = len(reo.findall(logs))
+                self.assertEqual(
+                    num_log_matches, expected_num, msg=assert_msg + str(num_log_matches)
+                )
+
     def test_parse_strings(self):
         """Test parsing of input strings."""
         self.assert_parse_equals_file(clingo_lang, "a :- b.", asp_dir / "ab_reified.txt")
@@ -131,7 +185,7 @@ class TestAspenTree(TestCase):
         with self.assertRaisesRegex(ValueError, regex):
             tree.parse("a.")
 
-    def test_transform_add_vars_(self):
+    def test_transform_add_vars(self):
         """Test transformation, adding variables to atoms."""
         self.assert_transform_equals(
             language=clingo_lang,
@@ -139,6 +193,15 @@ class TestAspenTree(TestCase):
             meta_files=[asp_dir / "add_var.lp"],
             initial_program=("add_var_to_atoms", [String("X")]),
             expected_str="a(X) :- b(X).",
+        )
+
+    def test_transform_join(self):
+        """Test transformation that uses a string join."""
+        self.assert_transform_equals(
+            language=clingo_lang,
+            source="a.",
+            meta_files=[asp_dir / "add_body_to_facts.lp"],
+            expected_str="a :- b; c.",
         )
 
     def test_transform_multiple_edits_same_node(self):
@@ -172,7 +235,7 @@ class TestAspenTree(TestCase):
         tree = AspenTree(default_language=clingo_lang)
         tree.parse("p(1).")
         meta_str = "aspen(edit(N,foo(1))) :- N=(s(0),((),0)); node(N)."
-        regex_str = r"Symbol foo\(1\) does not match any allowed replacement symbols\."
+        regex_str = r"Symbol foo\(1\) could not be converted to string\."
         with self.assertRaisesRegex(ValueError, regex_str):
             tree.transform(meta_string=meta_str)
 
@@ -249,3 +312,36 @@ p(1
 ,
 2).""",
         )
+
+    def test_log(self):
+        """Test logging capabilities of AspenTree."""
+        self.assert_transform_logs(
+            log_level="DEBUG",
+            message2num_matches={r"s\(0\):0:0-1: debug: This is a log for node a.": 1},
+            language=clingo_lang,
+            source="a.",
+            meta_files=[asp_dir / "log_debug.lp"],
+        )
+        self.assert_transform_logs(
+            log_level="INFO",
+            message2num_matches={r"ab.lp:0:0-1: info: This is a log for node a.": 1},
+            language=clingo_lang,
+            source=asp_dir / "ab.lp",
+            meta_files=[asp_dir / "log_info.lp"],
+        )
+        self.assert_transform_logs(
+            log_level="WARNING",
+            message2num_matches={
+                r"""s\(0\):0:0-1:3: warning: This is a log for node p\(a,
+b\)..""": 1
+            },
+            language=clingo_lang,
+            source="""p(a,
+b).""",
+            meta_files=[asp_dir / "log_warning.lp"],
+        )
+        error_regex = r"s\(0\):0:0-1: error: This is a log for node a."
+        with self.assertRaisesRegex(TransformError, error_regex):
+            tree = AspenTree(default_language=clingo_lang)
+            tree.parse("a.")
+            tree.transform(meta_files=[asp_dir / "log_error.lp"])

@@ -28,6 +28,14 @@ StringName = str
 
 SourceInput = bytes | str | Path
 
+log_lvl_strs = {"debug", "info", "warning", "error", "critical"}
+log_lvl_str2int = {"debug": 10, "info": 20, "warning": 30, "error": 40, "critical": 50}
+
+
+class TransformError(Exception):
+    """Exception raised when a transformation meta-encoding derives an
+    error."""
+
 
 @dataclass
 class Source:
@@ -194,6 +202,8 @@ class AspenTree:
         l_py: list[Symbol] = []
         nil = Tuple_([])
         while l != nil:
+            if not l.match("", 2):
+                raise ValueError(f"Expected tuple of arity 2, found: {l}.")  # nocoverage
             l_py.append(l.arguments[0])
             l = l.arguments[1]
         return l_py
@@ -364,6 +374,43 @@ class AspenTree:
             raise ValueError(msg) from exc
         return edit_symbols
 
+    def _format_str_symb2str(self, symb: Symbol) -> str:
+        """Convert string symbol or format string symbol to python str."""
+        py_str: str
+        if symb.type == SymbolType.String:
+            py_str = symb.string
+        elif symb.match("", 2):
+            try:
+                source, node = self.node_id2ts(symb)
+                start, end = node.start_byte, node.end_byte
+                py_str = source.source_bytes[start:end].decode(source.encoding)
+            # if the tuple is not a node id
+            except ValueError as exc:  # nocoverage
+                raise ValueError(
+                    f"Symbol {symb} could not be converted to string."
+                ) from exc
+        elif (
+            symb.match("format", 2)
+            and symb.arguments[0].type == SymbolType.String
+            and symb.arguments[1].match("", 2)
+        ):
+            format_string = symb.arguments[0].string
+            inserts = self.conslist2list(symb.arguments[1])
+            insert_strs: list[str] = [self._format_str_symb2str(s) for s in inserts]
+            py_str = format_string.format(*insert_strs)
+        elif (
+            symb.match("join", 2)
+            and symb.arguments[0].type == SymbolType.String
+            and symb.arguments[1].match("", 2)
+        ):
+            join_str = symb.arguments[0].string
+            inserts = self.conslist2list(symb.arguments[1])
+            insert_strs = [self._format_str_symb2str(s) for s in inserts]
+            py_str = join_str.join(insert_strs)
+        else:
+            raise ValueError(f"Symbol {symb} could not be converted to string.")
+        return py_str
+
     def _edit_sources_from_symbs(
         self, edit_symbols: Sequence[Symbol]
     ) -> dict[Symbol, set[ts.Range]]:
@@ -394,34 +441,7 @@ class AspenTree:
         for symb in edit_symbols:
             replacement = symb.arguments[1]
             target_source, target_node = self.node_id2ts(symb.arguments[0])
-            if replacement.match("format", 2):
-                format_string = replacement.arguments[0].string
-                replacement_tup = replacement.arguments[1]
-                insert_texts: list[str] = []
-                inserts = self.conslist2list(replacement_tup)
-                for insert in inserts:
-                    # insert is a node
-                    if insert.match("", 2):
-                        insert_source, insert_node = self.node_id2ts(insert)
-                        start, end = insert_node.start_byte, insert_node.end_byte
-                        insert_text = insert_source.source_bytes[start:end].decode(
-                            insert_source.encoding
-                        )
-                    # insert is not a node
-                    else:
-                        insert_text = str(insert)
-                        if insert_text.startswith('"') and insert_text.endswith('"'):
-                            insert_text = insert_text[1:-1]
-                    insert_texts.append(insert_text)
-                replacement_text = format_string.format(*insert_texts)
-
-            elif replacement.type == SymbolType.String:
-                replacement_text = replacement.string
-            else:
-                raise ValueError(
-                    f"Symbol {replacement} does not match any "
-                    "allowed replacement symbols."
-                )
+            replacement_text = self._format_str_symb2str(replacement)
             replacement_bytes = bytes(replacement_text, target_source.encoding)
             target_source.source_bytes = ts_edit_tree(
                 target_source.tree,
@@ -438,6 +458,42 @@ class AspenTree:
         # print(edited_sources)
         return edited_sources
 
+    def _process_log_symbs(self, log_symbols: list[Symbol]) -> None:
+        """Emit logs based on log symbols."""
+        error_msgs: list[str] = []
+        for symb in log_symbols:
+            log_level_symb = symb.arguments[1]
+            if (
+                log_level_symb.type == SymbolType.String
+                and log_level_symb.string in log_lvl_strs
+            ):
+                log_lvl_str = log_level_symb.string
+                log_lvl = log_lvl_str2int[log_lvl_str]
+            else:  # nocoverage
+                raise ValueError(
+                    f"Second argument of log symbol {symb} must be"
+                    f" one of {log_lvl_strs}."
+                )
+            source, node = self.node_id2ts(symb.arguments[0])
+            if source.path is not None:
+                source_str = str(source.path)
+            else:
+                source_str = str(source.id)
+            start_p, end_p = node.start_point, node.end_point
+            if start_p.row == end_p.row:
+                span_str = f"{start_p.row}:{start_p.column}-{end_p.column}"
+            else:
+                span_str = f"{start_p.row}:{start_p.column}-{end_p.row}:{end_p.column}"
+            text = self._format_str_symb2str(symb.arguments[2])
+            log_msg = f"{source_str}:{span_str}: {log_lvl_str}: {text}"
+            if log_lvl == 40:
+                error_msgs.append(log_msg)
+                print(log_msg)
+            else:
+                logger.log(log_lvl, log_msg)
+        if len(error_msgs) > 0:
+            raise TransformError("\n".join(error_msgs))
+
     def _on_transform_model(self, model: Model) -> Literal[False]:
         """Model callback for transformation. Returns False as we only
         expect one model."""
@@ -451,6 +507,7 @@ class AspenTree:
         edit_symbols: list[Symbol] = []
         next_transform_symbols: list[Symbol] = []
         deps: defaultdict[Symbol, list[Symbol]] = defaultdict(list)
+        log_symbols: list[Symbol] = []
         for symb in model.symbols(shown=True):
             if symb.match("aspen", 1):
                 arg = symb.arguments[0]
@@ -464,6 +521,8 @@ class AspenTree:
                     deps[arg.arguments[1]].append(arg.arguments[0])
                 elif arg.match("next_program", 2):
                     next_transform_symbols.append(arg)
+                elif arg.match("log", 3):
+                    log_symbols.append(arg)
         if len(next_transform_symbols) > 1:
             raise ValueError(
                 (
@@ -486,6 +545,7 @@ class AspenTree:
                 next_symb.arguments[0].string,
                 next_symb.arguments[1].arguments,
             )
+        self._process_log_symbs(log_symbols)
         sorted_edit_symbols = self._topological_sort_edits(edit_symbols, deps)
         edited_sources = self._edit_sources_from_symbs(sorted_edit_symbols)
         self._reparse_sources(edited_sources)
@@ -519,7 +579,7 @@ class AspenTree:
         parts: Sequence[tuple[str, Sequence[Symbol]]]
         while self.next_transform_program is not None:
             # print(self.next_transform_program)
-            control = Control(arguments=options)
+            control = Control(arguments=options, logger=clingo_logger)
             for fi in encoding_files:
                 control.load(fi)
             if meta_string is not None:
