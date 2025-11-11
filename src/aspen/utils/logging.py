@@ -12,7 +12,7 @@ from typing import Callable, TextIO
 import tree_sitter as ts
 
 # pylint: disable=import-error,no-name-in-module
-from clingo.core import MessageType
+from clingo.core import MessageCode
 
 NOTSET = logging.NOTSET
 DEBUG = logging.DEBUG
@@ -88,38 +88,35 @@ def get_logger(name: str) -> logging.Logger:
     return logging.getLogger(name)
 
 
+CLINGO_FSTRING = "clingo: %s"
+
+
 def log_clingo_message(
-    message_code: MessageType, message: str, logger: logging.Logger
+    message_code: MessageCode, message: str, logger: logging.Logger
 ) -> None:  # nocoverage
-    """Log clingo message at the appropriate level"""
-    clingo_fstring = "clingo: %s"
-    if message_code is MessageType.Trace:
-        logger.debug(clingo_fstring, message)
-    elif message_code is MessageType.Debug:
-        logger.debug(clingo_fstring, message)
-    elif message_code is MessageType.Info:
-        logger.info(clingo_fstring, message)
-    elif message_code is MessageType.Warn:
-        logger.warn(clingo_fstring, message)
-    elif message_code is MessageType.Error:
-        logger.error(clingo_fstring, message)
-    elif message_code is MessageType.AtomUndefined:
-        logger.info(clingo_fstring, message)
-    elif message_code is MessageType.FileIncluded:
-        logger.warn(clingo_fstring, message)
-    elif message_code is MessageType.GlobalVariable:
-        logger.info(clingo_fstring, message)
-    elif message_code is MessageType.OperationUndefined:
-        logger.info(clingo_fstring, message)
+    "Log clingo message at the appropriate level"
+    if message_code is MessageCode.AtomUndefined:
+        logger.info(CLINGO_FSTRING, message)
+    elif message_code is MessageCode.FileIncluded:
+        logger.warn(CLINGO_FSTRING, message)
+    elif message_code is MessageCode.GlobalVariable:
+        logger.info(CLINGO_FSTRING, message)
+    elif message_code is MessageCode.OperationUndefined:
+        logger.info(CLINGO_FSTRING, message)
+    # not sure what the appropriate log level for "Other" is... just do info for now
+    elif message_code is MessageCode.Other:
+        logger.info(CLINGO_FSTRING, message)
+    elif message_code is MessageCode.RuntimeError:
+        logger.error(CLINGO_FSTRING, message)
+    elif message_code is MessageCode.VariableUnbounded:
+        logger.info(CLINGO_FSTRING, message)
 
 
 def get_clingo_logger(
     logger: logging.Logger,
-) -> Callable[[MessageType, str], None]:
-    """Return a callback function to be used when initializing a
-    clingo.core.Library object to log to input logger.
-
-    """
+) -> Callable[[MessageCode, str], None]:
+    """Return a callback function to be used by a clingo.Control
+    object to log to input logger."""
     return partial(log_clingo_message, logger=logger)
 
 

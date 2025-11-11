@@ -7,14 +7,12 @@ from unittest import TestCase
 import tree_sitter_clingo as ts_clingo
 
 # pylint: disable=import-error,no-name-in-module
-from clingo.core import Library
 from clingo.symbol import String, Symbol, parse_term
 from tree_sitter import Language
 
 from aspen.tree import AspenTree, SourceInput
 
 asp_dir = (Path(__file__) / ".." / "files").resolve()
-lib = Library()
 clingo_lang = Language(ts_clingo.language())
 
 
@@ -33,9 +31,9 @@ class TestAspenTree(TestCase):
         # we have to parse and then turn back into string due to
         # clingo6 bug: https://github.com/potassco/clingo/issues/579
         with path.open() as f:
-            expected_symbols = [str(parse_term(lib, s)) for s in f.readlines()]
+            expected_symbols = [str(parse_term(s)) for s in f.readlines()]
         expected_symbols.sort()
-        symbols = [str(parse_term(lib, str(s))) for s in tree.facts]
+        symbols = [str(parse_term(str(s))) for s in tree.facts]
         symbols.sort()
         self.assertListEqual(symbols, expected_symbols)
 
@@ -96,31 +94,31 @@ class TestAspenTree(TestCase):
     def test_path2py(self):
         """Test conversion of symbolic path to python list"""
         tree = AspenTree(default_language=clingo_lang)
-        good_path = parse_term(tree.lib, "(((), 2), 1)")
+        good_path = parse_term("(((), 2), 1)")
         self.assertListEqual(tree.path2py(good_path), [1, 2])
-        inverted_path = parse_term(tree.lib, "(1, (2, ()))")
+        inverted_path = parse_term("(1, (2, ()))")
         re_str = r"Malformed path symbol"
         with self.assertRaisesRegex(ValueError, re_str):
             tree.path2py(inverted_path)
-        bad_element_path = parse_term(tree.lib, "(((), b), a)")
+        bad_element_path = parse_term("(((), b), a)")
         with self.assertRaisesRegex(ValueError, re_str):
             tree.path2py(bad_element_path)
 
     def test_node_id2ts(self):
         """Test conversion of node id to tree sitter tree node."""
         tree = AspenTree(default_language=clingo_lang)
-        source_id = parse_term(tree.lib, "test(42)")
+        source_id = parse_term("test(42)")
         tree.parse("a.", identifier=source_id)
-        node_id = parse_term(tree.lib, "(test(42),(((),0),0))")
+        node_id = parse_term("(test(42),(((),0),0))")
         source, node = tree.node_id2ts(node_id)
         expected_source = tree.sources[source_id]
         self.assertEqual(source, expected_source)
         expected_node = tree.sources[source_id].tree.root_node.child(0).child(0)
         self.assertEqual(node, expected_node)
-        unknown_source_node_id = parse_term(tree.lib, "(foo(41),())")
+        unknown_source_node_id = parse_term("(foo(41),())")
         with self.assertRaisesRegex(ValueError, r"Unknown source symbol."):
             tree.node_id2ts(unknown_source_node_id)
-        non_existent_path_node_id = parse_term(tree.lib, "(test(42),(((),0),2))")
+        non_existent_path_node_id = parse_term("(test(42),(((),0),2))")
         regex_str = r"No node found in tree at path"
         with self.assertRaisesRegex(ValueError, regex_str):
             tree.node_id2ts(non_existent_path_node_id)
@@ -139,7 +137,7 @@ class TestAspenTree(TestCase):
             language=clingo_lang,
             source="a :- b.",
             meta_files=[asp_dir / "add_var.lp"],
-            initial_program=("add_var_to_atoms", [String(lib, "X")]),
+            initial_program=("add_var_to_atoms", [String("X")]),
             expected_str="a(X) :- b(X).",
         )
 
@@ -199,7 +197,7 @@ class TestAspenTree(TestCase):
             meta_string=(
                 '#program add_var_to_atoms(var). aspen(edit(N,"c")) :- leaf_text(N,"b").'
             ),
-            initial_program=("add_var_to_atoms", [String(lib, "X")]),
+            initial_program=("add_var_to_atoms", [String("X")]),
             expected_str="a(c,X).",
         )
 
@@ -210,7 +208,7 @@ class TestAspenTree(TestCase):
             language=clingo_lang,
             source="a :- b.",
             meta_files=[asp_dir / "rename_a_to_b.lp", asp_dir / "add_var.lp"],
-            initial_program=("rename_x_to_y", [String(lib, "a"), String(lib, "b")]),
+            initial_program=("rename_x_to_y", [String("a"), String("b")]),
             expected_str="b(X) :- b(X).",
         )
 

@@ -10,8 +10,7 @@ import tree_sitter as ts
 
 # pylint: disable=import-error,no-name-in-module
 from clingo.control import Control
-from clingo.core import Library
-from clingo.solve import Model
+from clingo.solving import Model
 from clingo.symbol import Function, Number, String, Symbol, SymbolType, Tuple_
 
 import aspen
@@ -64,12 +63,10 @@ class AspenTree:
         self,
         default_language: Optional[ts.Language] = None,
         default_encoding: StringEncoding = "utf8",
-        clingo_lib: Optional[Library] = None,
     ):
         self.sources: dict[Symbol, Source] = {}
         self.default_language = default_language
         self.default_encoding = default_encoding
-        self.lib = clingo_lib if clingo_lib is not None else Library(logger=clingo_logger)
         self.facts: List[Symbol] = []
         self.next_transform_program: Optional[tuple[str, Sequence[Symbol]]] = None
         self.id_counter = 0
@@ -106,7 +103,7 @@ class AspenTree:
             )
         tree = parser.parse(source_bytes, encoding=encoding)
         if identifier is None:
-            identifier = Function(self.lib, "s", [Number(self.lib, self.id_counter)])
+            identifier = Function("s", [Number(self.id_counter)])
             self.id_counter += 1
         processed_source = Source(identifier, source_bytes, path, encoding, parser, tree)
         self.sources[identifier] = processed_source
@@ -118,23 +115,20 @@ class AspenTree:
     ) -> list[Symbol]:
         """Reify a tree-sitter node and it's attributes into a (set of) fact(s)."""
         facts: list[Symbol] = []
-        facts.append(Function(self.lib, "node", [node_id]))
+        facts.append(Function("node", [node_id]))
         if node.is_named:
-            facts.append(
-                Function(self.lib, "type", [node_id, String(self.lib, node.type)])
-            )
+            facts.append(Function("type", [node_id, String(node.type)]))
         if node.is_error:
-            facts.append(Function(self.lib, "error", [node_id]))
+            facts.append(Function("error", [node_id]))
         if node.is_missing:
-            facts.append(Function(self.lib, "missing", [node_id]))
+            facts.append(Function("missing", [node_id]))
         if node.is_extra:  # nocoverage
-            facts.append(Function(self.lib, "extra", [node_id]))
+            facts.append(Function("extra", [node_id]))
         if node.child_count == 0 and node.text is not None:
             facts.append(
                 Function(
-                    self.lib,
                     "leaf_text",
-                    [node_id, String(self.lib, node.text.decode(encoding))],
+                    [node_id, String(node.text.decode(encoding))],
                 )
             )
         return facts
@@ -150,36 +144,31 @@ class AspenTree:
         facts: list[Symbol] = []
         while len(stack) > 0:
             parent, parent_path = stack.pop()
-            parent_id = Tuple_(self.lib, [source.id, parent_path])
+            parent_id = Tuple_([source.id, parent_path])
             facts.extend(self._reify_node_attrs(parent, parent_id, source.encoding))
             for idx, child in enumerate(parent.children):
-                child_path = Tuple_(self.lib, [parent_path, Number(self.lib, idx)])
-                child_id = Tuple_(self.lib, [source.id, child_path])
+                child_path = Tuple_([parent_path, Number(idx)])
+                child_id = Tuple_([source.id, child_path])
                 field_name = parent.field_name_for_child(idx)
                 if field_name is not None:
-                    facts.append(
-                        Function(
-                            self.lib, "field", [child_id, String(self.lib, field_name)]
-                        )
-                    )
+                    facts.append(Function("field", [child_id, String(field_name)]))
                 stack.append((child, child_path))
         return facts
 
     def _reify_ts_tree(self, tree: ts.Tree, source: Source) -> None:
         """Reify tree-sitter tree into a set of facts."""
         root_node = tree.root_node
-        root_path = Tuple_(self.lib, [])
+        root_path = Tuple_([])
         if source.parser.language is None:  # nocoverage
             raise ValueError(f"Parser of source should not be None: {source}.")
         lang_name = source.parser.language.name
         if lang_name is None:  # nocoverage
             raise ValueError(f"Language of parser of source cannot be None: {source}.")
         lang_fact = Function(
-            self.lib,
             "language",
             [
                 source.id,
-                String(self.lib, source.parser.language.name),  # type: ignore
+                String(source.parser.language.name),  # type: ignore
             ],
         )
         self.facts.append(lang_fact)
@@ -188,9 +177,12 @@ class AspenTree:
     def path2py(self, path_symb: Symbol) -> list[int]:
         """Convert path expression from symbolic to list form."""
         l: list[int] = []
-        nil = Tuple_(self.lib, [])
+        nil = Tuple_([])
         while path_symb != nil:
-            if not path_symb.match(2) or path_symb.arguments[1].type != SymbolType.Number:
+            if (
+                not path_symb.match("", 2)
+                or path_symb.arguments[1].type != SymbolType.Number
+            ):
                 raise ValueError(f"Malformed path symbol: {path_symb}.")
             l.append(path_symb.arguments[1].number)
             path_symb = path_symb.arguments[0]
@@ -200,7 +192,7 @@ class AspenTree:
         """Convert symbolic cons list consisting of nested tuples into
         a python list of symbols."""
         l_py: list[Symbol] = []
-        nil = Tuple_(self.lib, [])
+        nil = Tuple_([])
         while l != nil:
             l_py.append(l.arguments[0])
             l = l.arguments[1]
@@ -208,7 +200,7 @@ class AspenTree:
 
     def node_id2ts(self, node_id: Symbol) -> SourceNode:
         """Retrieve tree-sitter node from node identifier symbol."""
-        source_symb, path_symb = node_id.arguments
+        source_symb, path_symb = node_id.arguments[0], node_id.arguments[1]
         path_list = self.path2py(path_symb)
         try:
             source = self.sources[source_symb]
@@ -239,11 +231,11 @@ class AspenTree:
         stack: list[tuple[ts.Node, Symbol]] = [(node, node_path_symb)]
         while len(stack) > 0:
             parent, parent_path = stack.pop()
-            parent_id = Tuple_(self.lib, [source_symb, parent_path])
+            parent_id = Tuple_([source_symb, parent_path])
             desc_ids.append(parent_id)
             for idx, child in enumerate(parent.children):
-                child_path = Tuple_(self.lib, [parent_path, Number(self.lib, idx)])
-                child_id = Tuple_(self.lib, [source_symb, child_path])
+                child_path = Tuple_([parent_path, Number(idx)])
+                child_id = Tuple_([source_symb, child_path])
                 desc_ids.append(child_id)
                 stack.append((child, child_path))
         return desc_ids
@@ -256,13 +248,13 @@ class AspenTree:
             path.append(parent.children.index(node))
             node = parent
             parent = node.parent
-        path_symb = Tuple_(self.lib, [])
+        path_symb = Tuple_([])
         while True:
             try:
                 idx = path.pop()
             except IndexError:
                 break
-            path_symb = Tuple_(self.lib, [path_symb, Number(self.lib, idx)])
+            path_symb = Tuple_([path_symb, Number(idx)])
         return path_symb
 
     def _re_reify_changed_subtrees(
@@ -294,10 +286,8 @@ class AspenTree:
                         node_idx = parent.children.index(n1)
                         field_name = parent.field_name_for_child(node_idx)
                         if field_name is not None:
-                            node_id = Tuple_(self.lib, [source_symb, path])
-                            field_fact = Function(
-                                self.lib, "field", [node_id, String(self.lib, field_name)]
-                            )
+                            node_id = Tuple_([source_symb, path])
+                            field_fact = Function("field", [node_id, String(field_name)])
                             new_facts.append(field_fact)
 
         # print("Ids to be deleted:")
@@ -411,14 +401,14 @@ class AspenTree:
                 inserts = self.conslist2list(replacement_tup)
                 for insert in inserts:
                     # insert is a node
-                    try:
+                    if insert.match("", 2):
                         insert_source, insert_node = self.node_id2ts(insert)
                         start, end = insert_node.start_byte, insert_node.end_byte
                         insert_text = insert_source.source_bytes[start:end].decode(
                             insert_source.encoding
                         )
                     # insert is not a node
-                    except ValueError:
+                    else:
                         insert_text = str(insert)
                         if insert_text.startswith('"') and insert_text.endswith('"'):
                             insert_text = insert_text[1:-1]
@@ -485,7 +475,8 @@ class AspenTree:
             next_symb = next_transform_symbols[0]
             if (
                 next_symb.arguments[0].type != SymbolType.String
-                or next_symb.arguments[1].type != SymbolType.Tuple
+                or next_symb.arguments[1].type != SymbolType.Function
+                or next_symb.arguments[1].name != ""
             ):
                 raise ValueError(
                     "First argument of next_transform_program must be a string, "
@@ -525,22 +516,23 @@ class AspenTree:
         )
         base_program = ("base", ())
         self.next_transform_program = initial_program
+        parts: Sequence[tuple[str, Sequence[Symbol]]]
         while self.next_transform_program is not None:
             # print(self.next_transform_program)
-            control = Control(self.lib, options=options)
-            control.parse_files(encoding_files)
+            control = Control(arguments=options)
+            for fi in encoding_files:
+                control.load(fi)
             if meta_string is not None:
-                control.parse_string(meta_string)
-            with control.backend as backend:
+                control.add(meta_string)
+            with control.backend() as backend:
                 for fact in self.facts:
-                    atom = backend.atom(fact)
-                    backend.rule([atom])
+                    atom = backend.add_atom(fact)
+                    backend.add_rule([atom])
             parts = (
-                None
+                [base_program]
                 if self.next_transform_program == base_program
                 else [base_program, self.next_transform_program]
             )
             control.ground(parts=parts)
             self.next_transform_program = None
-            with control.solve(on_model=self._on_transform_model) as handle:
-                handle.get()
+            control.solve(on_model=self._on_transform_model)

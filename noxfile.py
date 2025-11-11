@@ -6,7 +6,6 @@ nox.options.sessions = "lint_pylint", "typecheck", "test"
 
 EDITABLE_TESTS = True
 PYTHON_VERSIONS = None
-TEST_INSTALL = "--extra-index-url=https://test.pypi.org/simple"
 if "GITHUB_ACTIONS" in os.environ:
     PYTHON_VERSIONS = ["3.11"]
     EDITABLE_TESTS = False
@@ -19,7 +18,7 @@ def dev(session):
 
     Activate it by running `source .nox/dev/bin/activate`.
     """
-    session.install("-e", ".[dev]", TEST_INSTALL)
+    session.install("-e", ".[dev]")
 
 
 @nox.session
@@ -27,7 +26,7 @@ def lint_pylint(session):
     """
     Run pylint.
     """
-    session.install("-e", ".[lint_pylint]", TEST_INSTALL)
+    session.install("-e", ".[lint_pylint]")
     session.run("pylint", "aspen", "tests")
 
 
@@ -36,7 +35,7 @@ def typecheck(session):
     """
     Typecheck the code using mypy.
     """
-    session.install("-e", ".[typecheck]", TEST_INSTALL)
+    session.install("-e", ".[typecheck]")
     session.run("mypy", "--strict", "-p", "aspen", "-p", "tests")
 
 
@@ -49,7 +48,7 @@ def test(session):
     This can for example be used to selectively run test cases.
     """
 
-    args = [".[test]", TEST_INSTALL]
+    args = [".[test]"]
     if EDITABLE_TESTS:
         args.insert(0, "-e")
     session.install(*args)
