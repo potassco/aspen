@@ -53,7 +53,7 @@ def test(session):
         args.insert(0, "-e")
     session.install(*args)
     if session.posargs:
-        session.run("coverage", "run", "-m", "unittest", session.posargs[0], "-v")
+        session.run("coverage", "run", "-m", "unittest", *session.posargs, "-v", "-b")
     else:
-        session.run("coverage", "run", "-m", "unittest", "discover", "-v")
+        session.run("coverage", "run", "-m", "unittest", "discover", "-v", "-b")
         session.run("coverage", "report", "-m", "--fail-under=100")

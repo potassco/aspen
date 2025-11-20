@@ -1,0 +1,5 @@
+* How tree sitter does edits
+
+It seems that is is always the first node intersecting or preceeding the target byte range that is edited.
+
+This can be problematic when performing "append" actions.

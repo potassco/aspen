@@ -1,10 +1,12 @@
 """Module defining the AspenTree class."""
 
+import logging
 from collections import defaultdict
 from dataclasses import dataclass
 from graphlib import CycleError, TopologicalSorter
+from itertools import count
 from pathlib import Path
-from typing import List, Literal, Optional, Sequence
+from typing import Generator, List, Literal, Optional, Sequence
 
 import tree_sitter as ts
 
@@ -15,7 +17,13 @@ from clingo.symbol import Function, Number, String, Symbol, SymbolType, Tuple_
 
 import aspen
 from aspen.utils.logging import get_clingo_logger, get_logger, get_ts_logger
-from aspen.utils.tree_sitter_utils import ts_edit_tree
+from aspen.utils.tree_sitter_utils import (
+    Change,
+    calc_node_edit_range,
+    edit_tree,
+    get_path_of_node,
+    get_tree_changes,
+)
 
 logger = get_logger(__name__)
 clingo_logger = get_clingo_logger(logger)
@@ -25,16 +33,38 @@ Id = int
 Bytes = tuple[int, int]
 StringEncoding = Literal["utf8", "utf16"]
 StringName = str
+RelatedNodes = tuple[
+    Optional[Symbol],
+    Optional[Symbol],
+    Optional[Symbol],
+    Optional[Symbol],
+    Optional[Symbol],
+]
 
 SourceInput = bytes | str | Path
 
-log_lvl_strs = {"debug", "info", "warning", "error", "critical"}
-log_lvl_str2int = {"debug": 10, "info": 20, "warning": 30, "error": 40, "critical": 50}
+log_lvl_strs = {"debug", "info", "warning"}
+log_lvl_str2int = {"debug": 10, "info": 20, "warning": 30}
+
+base_program = ("base", ())
+
+aspen_init_path = Path(aspen.__file__)
+encoding_path = (aspen_init_path / ".." / "asp").resolve()
+generic_util_path = encoding_path / "utils" / "generic"
 
 
 class TransformError(Exception):
     """Exception raised when a transformation meta-encoding derives an
     error."""
+
+
+def id_counter(start: int = 0, step: int = 1) -> Generator[Symbol]:
+    """Simple infinite generator that yields clingo Numbers, starting
+    from start, with increment given by step."""
+    n = start
+    while True:
+        yield Number(n)
+        n += step
 
 
 @dataclass
@@ -47,10 +77,6 @@ class Source:
     encoding: StringEncoding
     parser: ts.Parser
     tree: ts.Tree
-
-
-SourceNode = tuple[Source, ts.Node]
-FormatEdit = tuple[SourceNode, tuple[str, list[SourceNode]]]
 
 
 class AspenTree:
@@ -71,13 +97,78 @@ class AspenTree:
         self,
         default_language: Optional[ts.Language] = None,
         default_encoding: StringEncoding = "utf8",
+        id_generator: Optional[Generator[Symbol]] = None,
     ):
         self.sources: dict[Symbol, Source] = {}
         self.default_language = default_language
         self.default_encoding = default_encoding
         self.facts: List[Symbol] = []
         self.next_transform_program: Optional[tuple[str, Sequence[Symbol]]] = None
-        self.id_counter = 0
+        self._id_generator = id_counter() if id_generator is None else id_generator
+        self._source_counter = count()
+        self._node_id2source_node: dict[Symbol, tuple[Source, ts.Node]] = {}
+
+    def _path2py(self, path_symb: Symbol) -> list[int]:
+        """Convert path expression from symbolic to list form."""
+        l: list[int] = []
+        nil = Tuple_([])
+        while path_symb != nil:
+            if (
+                not path_symb.match("", 2)
+                or path_symb.arguments[0].type != SymbolType.Number
+            ):
+                raise ValueError(f"Malformed path symbol: {path_symb}.")
+            l.append(path_symb.arguments[0].number)
+            path_symb = path_symb.arguments[1]
+        return l
+
+    def _cons_list2py(self, l: Symbol) -> list[Symbol]:
+        """Convert symbolic cons list consisting of nested tuples into
+        a python list of symbols."""
+        l_py: list[Symbol] = []
+        nil = Tuple_([])
+        while l != nil:
+            if not l.match("", 2):
+                raise ValueError(f"Expected tuple of arity 2, found: {l}.")  # nocoverage
+            l_py.append(l.arguments[0])
+            l = l.arguments[1]
+        return l_py
+
+    def _py_node2path_symb(self, node: ts.Node) -> Symbol:
+        """Given a tree-sitter node, calculate the corresponding path symbol."""
+        path = get_path_of_node(node)
+        path_symb = Tuple_([])
+        for idx in path:
+            path_symb = Tuple_([Number(idx), path_symb])
+        return path_symb
+
+    def _source_path2py_source_node(
+        self, source_path_symb: Symbol
+    ) -> tuple[Source, ts.Node]:
+        """Retrieve tree-sitter node from node identifier symbol."""
+        source_symb, path_symb = (
+            source_path_symb.arguments[0],
+            source_path_symb.arguments[1],
+        )
+        logger.debug(
+            "Retrieving node from tree of source %s at path %s.", source_symb, path_symb
+        )
+        path_list = self._path2py(path_symb)
+        try:
+            source = self.sources[source_symb]
+        except KeyError as exc:
+            raise ValueError(f"Unknown source symbol: {source_symb}.") from exc
+        tree = source.tree
+        node = tree.root_node
+        for idx in path_list:
+            try:
+                tmp_node = node.child(idx)
+                if tmp_node is None:  # nocoverage
+                    raise ValueError(f"No node found in tree at path: {path_symb}.")
+            except IndexError as exc:
+                raise ValueError(f"No node found in tree at path: {path_symb}.") from exc
+            node = tmp_node
+        return source, node
 
     def parse(
         self,
@@ -101,7 +192,7 @@ class AspenTree:
         elif isinstance(source, str):
             source_bytes = bytes(source, encoding)
         elif isinstance(source, Path):
-            path = source.resolve().resolve()
+            path = source.resolve()
             if not path.is_file():  # nocoverage
                 raise IOError(f"File {path} not found.")
             source_bytes = path.read_bytes()
@@ -109,13 +200,27 @@ class AspenTree:
             raise TypeError(
                 f"Argument 'source' must be of type {SourceInput}, got: {type(source)}."
             )
-        tree = parser.parse(source_bytes, encoding=encoding)
+
         if identifier is None:
-            identifier = Function("s", [Number(self.id_counter)])
-            self.id_counter += 1
+            identifier = Function("s", [Number(next(self._source_counter))])
+        if logger.isEnabledFor(logging.INFO):
+            logger.info(
+                "Assigning identifier %s to new source with contents: '%s'",
+                identifier,
+                source_bytes.decode(encoding).replace("\n", "\\n"),
+            )
+            logger.info(
+                "Parsing source %s with language set to %s and encoding set to %s.",
+                identifier,
+                language.name,
+                encoding,
+            )
+        tree = parser.parse(source_bytes, encoding=encoding)
         processed_source = Source(identifier, source_bytes, path, encoding, parser, tree)
         self.sources[identifier] = processed_source
-        self._reify_ts_tree(tree, processed_source)
+        self.facts.extend(self._reify_ts_tree(tree, processed_source))
+        if path is not None:
+            self.facts.append(Function("source_path", [identifier, String(str(path))]))
         return identifier
 
     def _reify_node_attrs(
@@ -124,7 +229,9 @@ class AspenTree:
         """Reify a tree-sitter node and it's attributes into a (set of) fact(s)."""
         facts: list[Symbol] = []
         facts.append(Function("node", [node_id]))
-        if node.is_named:
+        # we don't reify the type of error nodes as we mark them via
+        # error(Node), making the fact type(Node, "ERROR") redundant.
+        if node.is_named and not node.is_error:
             facts.append(Function("type", [node_id, String(node.type)]))
         if node.is_error:
             facts.append(Function("error", [node_id]))
@@ -142,31 +249,39 @@ class AspenTree:
         return facts
 
     def _reify_ts_subtree(
-        self,
-        node: ts.Node,
-        subtree_path: Symbol,
-        source: Source,
+        self, subtree_root_node: ts.Node, encoding: StringEncoding
     ) -> list[Symbol]:
-        """Reify tree-sitter subtree with input root node into a set of facts."""
-        stack: list[tuple[ts.Node, Symbol]] = [(node, subtree_path)]
+        """Reify tree-sitter subtree with input root node into a list of facts.
+
+        The first element of this list is guarenteed to be the node/1
+        fact corresponding to the root of the subtree.
+        """
+        subtree_root_id = next(self._id_generator)
+        stack: list[tuple[Symbol, ts.Node]] = [(subtree_root_id, subtree_root_node)]
         facts: list[Symbol] = []
         while len(stack) > 0:
-            parent, parent_path = stack.pop()
-            parent_id = Tuple_([source.id, parent_path])
-            facts.extend(self._reify_node_attrs(parent, parent_id, source.encoding))
+            parent_id, parent = stack.pop()
+            facts.extend(self._reify_node_attrs(parent, parent_id, encoding))
+            prev_child_id: Optional[Symbol] = None
             for idx, child in enumerate(parent.children):
-                child_path = Tuple_([parent_path, Number(idx)])
-                child_id = Tuple_([source.id, child_path])
+                child_id = next(self._id_generator)
+                if idx != 0:
+                    facts.append(
+                        Function("next_sibling", [prev_child_id, child_id])  # type:ignore
+                    )
+                facts.append(Function("child", [parent_id, child_id]))
                 field_name = parent.field_name_for_child(idx)
                 if field_name is not None:
                     facts.append(Function("field", [child_id, String(field_name)]))
-                stack.append((child, child_path))
+                prev_child_id = child_id
+                stack.append((child_id, child))
         return facts
 
-    def _reify_ts_tree(self, tree: ts.Tree, source: Source) -> None:
+    def _reify_ts_tree(self, tree: ts.Tree, source: Source) -> list[Symbol]:
         """Reify tree-sitter tree into a set of facts."""
+        logger.info("Reifying parse tree of source %s.", source.id)
+        facts: list[Symbol] = []
         root_node = tree.root_node
-        root_path = Tuple_([])
         if source.parser.language is None:  # nocoverage
             raise ValueError(f"Parser of source should not be None: {source}.")
         lang_name = source.parser.language.name
@@ -179,177 +294,233 @@ class AspenTree:
                 String(source.parser.language.name),  # type: ignore
             ],
         )
-        self.facts.append(lang_fact)
-        self.facts.extend(self._reify_ts_subtree(root_node, root_path, source))
-
-    def path2py(self, path_symb: Symbol) -> list[int]:
-        """Convert path expression from symbolic to list form."""
-        l: list[int] = []
-        nil = Tuple_([])
-        while path_symb != nil:
-            if (
-                not path_symb.match("", 2)
-                or path_symb.arguments[1].type != SymbolType.Number
-            ):
-                raise ValueError(f"Malformed path symbol: {path_symb}.")
-            l.append(path_symb.arguments[1].number)
-            path_symb = path_symb.arguments[0]
-        return l
-
-    def conslist2list(self, l: Symbol) -> list[Symbol]:
-        """Convert symbolic cons list consisting of nested tuples into
-        a python list of symbols."""
-        l_py: list[Symbol] = []
-        nil = Tuple_([])
-        while l != nil:
-            if not l.match("", 2):
-                raise ValueError(f"Expected tuple of arity 2, found: {l}.")  # nocoverage
-            l_py.append(l.arguments[0])
-            l = l.arguments[1]
-        return l_py
-
-    def node_id2ts(self, node_id: Symbol) -> SourceNode:
-        """Retrieve tree-sitter node from node identifier symbol."""
-        source_symb, path_symb = node_id.arguments[0], node_id.arguments[1]
-        path_list = self.path2py(path_symb)
-        try:
-            source = self.sources[source_symb]
-        except KeyError as exc:
-            raise ValueError(f"Unknown source symbol: {source_symb}.") from exc
-        tree = source.tree
-        node = tree.root_node
-        while True:
-            try:
-                idx = path_list.pop()
-            except IndexError:
-                break
-            try:
-                tmp_node = node.child(idx)
-                if tmp_node is None:  # nocoverage
-                    raise ValueError(f"No node found at path: {path_symb}.")
-            except IndexError as exc:
-                raise ValueError(f"No node found in tree at path: {path_symb}.") from exc
-            node = tmp_node
-        return source, node
-
-    def _get_descendant_ids(
-        self, node: ts.Node, node_path_symb: Symbol, source: Source
-    ) -> list[Symbol]:
-        """Return list of identifiers for all descendents of node."""
-        source_symb = source.id
-        desc_ids: list[Symbol] = []
-        stack: list[tuple[ts.Node, Symbol]] = [(node, node_path_symb)]
-        while len(stack) > 0:
-            parent, parent_path = stack.pop()
-            parent_id = Tuple_([source_symb, parent_path])
-            desc_ids.append(parent_id)
-            for idx, child in enumerate(parent.children):
-                child_path = Tuple_([parent_path, Number(idx)])
-                child_id = Tuple_([source_symb, child_path])
-                desc_ids.append(child_id)
-                stack.append((child, child_path))
-        return desc_ids
-
-    def _node2path_symb(self, node: ts.Node) -> Symbol:
-        """Given a tree-sitter node, calculate the corresponding path symbol."""
-        path: list[int] = []
-        parent = node.parent
-        while parent is not None:
-            path.append(parent.children.index(node))
-            node = parent
-            parent = node.parent
-        path_symb = Tuple_([])
-        while True:
-            try:
-                idx = path.pop()
-            except IndexError:
-                break
-            path_symb = Tuple_([path_symb, Number(idx)])
-        return path_symb
-
-    def _re_reify_changed_subtrees(
-        self, subtrees: defaultdict[Symbol, list[ts.Node]]
-    ) -> None:
-        """Re-reify subtrees who's syntactic structure changed due to
-        edit, and delete outdated facts from before edit."""
-        # drop nodes to be re-reified that are descendants of other nodes to be re-reified
-        delete_ids: set[Symbol] = set()
-        new_facts: list[Symbol] = []
-        contained_nodes: set[ts.Node] = set()
-        for source_symb, nodes in subtrees.items():
-            node_ranges = [(n, n.start_byte, n.end_byte) for n in nodes]
-            for idx, (n1, s1, e1) in enumerate(node_ranges):
-                if n1 in contained_nodes:
-                    continue
-                for n2, s2, e2 in node_ranges[idx + 1 :]:
-                    if s1 <= s2 and e2 <= e1:
-                        contained_nodes.add(n2)
-                    elif s2 <= s1 and e1 <= e2:  # nocoverage
-                        break
-                else:
-                    path = self._node2path_symb(n1)
-                    source = self.sources[source_symb]
-                    new_facts.extend(self._reify_ts_subtree(n1, path, source))
-                    delete_ids.update(self._get_descendant_ids(n1, path, source))
-                    if n1.parent is not None:
-                        parent = n1.parent
-                        node_idx = parent.children.index(n1)
-                        field_name = parent.field_name_for_child(node_idx)
-                        if field_name is not None:
-                            node_id = Tuple_([source_symb, path])
-                            field_fact = Function("field", [node_id, String(field_name)])
-                            new_facts.append(field_fact)
-
-        # print("Ids to be deleted:")
-        # print([str(s) for s in delete_ids])
-        self.facts = [f for f in self.facts if f.arguments[0] not in delete_ids]
-        # print("Reified facts to be added by transform:")
-        # print([str(s) for s in new_facts])
-        self.facts.extend(new_facts)
-
-    def _reparse_sources(self, edited_sources: dict[Symbol, set[ts.Range]]) -> None:
-        """Re-parse sources that have been edited, and update fact
-        representation based on the changed ranges of sources.
-
-        A set of additional ranges who's fact representation should be
-        updated can be provided as the value for the given source in
-        the edited_sources dict argument.
-        """
-
-        re_reify_subtree_roots: defaultdict[Symbol, list[ts.Node]] = defaultdict(list)
-        for source_symb, changed_ranges in edited_sources.items():
-            try:
-                source = self.sources[source_symb]
-            except KeyError as exc:  # nocoverage
-                raise ValueError(f"Unknown source symbol: {source_symb}.") from exc
-            old_tree = source.tree
-            # print(source.source_bytes)
-            new_tree = source.parser.parse(
-                source.source_bytes, old_tree, encoding=source.encoding
+        facts.append(lang_fact)
+        tree_facts = self._reify_ts_subtree(root_node, source.encoding)
+        root_id = tree_facts[0].arguments[0]
+        facts.append(Function("source_root", [source.id, root_id]))
+        facts.extend(tree_facts)
+        if logger.isEnabledFor(logging.INFO):
+            logger.info(
+                "Resulting facts from reifying source %s: %s",
+                source.id,
+                " ".join([str(s) + "." for s in facts]),
             )
-            changed_ranges.update(old_tree.changed_ranges(new_tree))
-            # print(changed_ranges)
-            source.tree = new_tree
-            # print(f"Changed ranges in source {source}:.")
-            # print(changed_ranges)
-            for changed_range in changed_ranges:
-                start, end = changed_range.start_byte, changed_range.end_byte
-                node = new_tree.root_node.descendant_for_byte_range(start, end)
-                if node is None:  # nocoverage
-                    raise RuntimeError("Code should be unreachable.")
-                # Not sure if this is necessary, but we walk up to the
-                # greatest node that spans the changed range.
-                parent = node.parent
-                while (
-                    parent is not None
-                    and parent.start_byte == start
-                    and parent.end_byte == end
-                ):
-                    node = parent
-                    parent = node.parent
+        return facts
 
-                re_reify_subtree_roots[source.id].append(node)
-        self._re_reify_changed_subtrees(re_reify_subtree_roots)
+    def transform(
+        self,
+        *,
+        meta_files: Optional[Sequence[Path]] = None,
+        meta_string: Optional[str] = None,
+        initial_program: tuple[str, Sequence[Symbol]] = ("base", ()),
+        control_options: Optional[Sequence[str]] = None,
+    ) -> None:
+        """Transform fact base via a meta-encoding."""
+        options = control_options if control_options is not None else []
+        if meta_files is not None:  # nocoverage
+            for f in meta_files:
+                if not f.is_file():
+                    raise IOError(f"File {f} not found.")
+        encoding_files = [str(f) for f in meta_files] if meta_files is not None else []
+
+        base_encodings = [encoding_path / "transform" / "all.lp"]
+        encoding_files.extend([str(p) for p in base_encodings])
+        self.next_transform_program = initial_program
+        parts: Sequence[tuple[str, Sequence[Symbol]]]
+        while self.next_transform_program is not None:
+            logger.debug("Initializing clingo.Control with options %s.", options)
+            control = Control(arguments=options, logger=clingo_logger)
+            parts = (
+                [base_program]
+                if self.next_transform_program == base_program
+                else [base_program, self.next_transform_program]
+            )
+            logger.info(
+                (
+                    "Grounding and solving program parts "
+                    "%s of transformation meta-encoding files %s and string '%s'."
+                ),
+                parts,
+                encoding_files,
+                meta_string,
+            )
+            for fi in encoding_files:
+                control.load(fi)
+            if meta_string is not None:
+                control.add(meta_string)
+            with control.backend() as backend:
+                for fact in self.facts:
+                    atom = backend.add_atom(fact)
+                    backend.add_rule([atom])
+            control.ground(parts=parts)
+            self.next_transform_program = None
+            control.solve(on_model=self._on_transform_model)
+
+    def _on_transform_model(self, model: Model) -> Literal[False]:
+        """Model callback for transformation. Returns False as we only
+        expect one model."""
+        if logger.isEnabledFor(logging.INFO):  # nocoverage
+            logger.info(
+                ("Found stable model with shown atoms: %s"),
+                " ".join([str(s) + "." for s in model.symbols(shown=True)]),
+            )
+        edit_symbols: list[Symbol] = []
+        next_transform_symbols: list[Symbol] = []
+        deps: defaultdict[Symbol, list[Symbol]] = defaultdict(list)
+        log_symbols: list[Symbol] = []
+        exception_symbols: list[Symbol] = []
+        for symb in model.symbols(shown=True):
+            if symb.match("aspen", 1):
+                arg = symb.arguments[0]
+                if arg.match("edit", 2):
+                    edit_symbols.append(arg)
+                elif arg.match("comes_before", 2):
+                    deps[arg.arguments[1]].append(arg.arguments[0])
+                elif arg.match("next_program", 2):
+                    next_transform_symbols.append(arg)
+                elif arg.match("log", 3) or arg.match("log", 2):
+                    log_symbols.append(arg)
+                elif arg.match("exception", 2) or arg.match("exception", 1):
+                    exception_symbols.append(arg)
+                elif arg.match("return", 2) and arg.arguments[0].match("path_of_node", 1):
+                    node_id = arg.arguments[0].arguments[0]
+                    self._node_id2source_node[Function("node", [node_id])] = (
+                        self._source_path2py_source_node(arg.arguments[1])
+                    )
+        if len(next_transform_symbols) > 1:
+            raise ValueError(
+                (
+                    "Multiple next_program-s defined, expected one: "
+                    f"{next_transform_symbols}."
+                )
+            )
+        if len(next_transform_symbols) > 0:
+            next_symb = next_transform_symbols[0]
+            if (
+                next_symb.arguments[0].type != SymbolType.String
+                or next_symb.arguments[1].type != SymbolType.Function
+                or next_symb.arguments[1].name != ""
+            ):
+                raise ValueError(
+                    "First argument of next_program must be a string, "
+                    f"second must be a tuple, found: {next_symb}."
+                )
+            prog_name = next_symb.arguments[0].string
+            prog_params = next_symb.arguments[1].arguments
+            logger.info(
+                "Setting next transformation program to (%s, %s)",
+                prog_name,
+                [str(s) for s in prog_params],
+            )
+            self.next_transform_program = (prog_name, prog_params)
+        self._process_log_symbs(log_symbols)
+        self._process_exception_symbs(exception_symbols)
+        sorted_edit_symbols = self._topological_sort_edits(edit_symbols, deps)
+        edited_sources = self._edit_sources_from_symbs(sorted_edit_symbols)
+        self._reparse_sources(edited_sources)
+        return False
+
+    def _get_loc_prefix_from_source_node(self, source: Source, node: ts.Node) -> str:
+        """Given a symbolic tuple of a source and path, calculate the
+        node's location prefix string for error and log messages.
+
+        """
+        if source.path is not None:
+            source_str = str(source.path)
+        else:
+            source_str = str(source.id)
+        start_p, end_p = node.start_point, node.end_point
+        if start_p.row == end_p.row:
+            span_str = f"{start_p.row}:{start_p.column}-{end_p.column}"
+        else:
+            span_str = f"{start_p.row}:{start_p.column}-{end_p.row}:{end_p.column}"
+        loc_prefix = f"{source_str}:{span_str}: "
+        return loc_prefix
+
+    def _process_log_symbs(self, log_symbols: list[Symbol]) -> None:
+        """Emit logs based on log symbols."""
+        for symb in log_symbols:
+            logger.debug("Processing log symbol %s.", symb)
+            if len(symb.arguments) == 2:
+                log_level_symb = symb.arguments[0]
+                loc_prefix = " "
+                text = self._format_str_symb2str(symb.arguments[1])
+            # case when len(symb.arguments) == 3
+            else:
+                log_level_symb = symb.arguments[1]
+                source, node = self._node_id2source_node[symb.arguments[0]]
+                loc_prefix = self._get_loc_prefix_from_source_node(source, node)
+                text = self._format_str_symb2str(symb.arguments[2])
+            if (
+                log_level_symb.type == SymbolType.String
+                and log_level_symb.string in log_lvl_strs
+            ):
+                log_lvl_str = log_level_symb.string
+                log_lvl = log_lvl_str2int[log_lvl_str]
+            else:  # nocoverage
+                raise ValueError(
+                    f"Level of log symbol {symb} must be" f" one of {log_lvl_strs}."
+                )
+
+            log_msg = f"{loc_prefix}{text}"
+            logger.debug(
+                "Log level and text of symbol after processing: %s, %s", log_lvl, log_msg
+            )
+            logger.log(log_lvl, log_msg)
+
+    def _process_exception_symbs(self, exception_symbols: list[Symbol]) -> None:
+        """Raise errors based on exception symbols."""
+        error_msgs: list[str] = []
+        for symb in exception_symbols:
+            logger.debug("Processing exception symbol %s.", symb)
+            if len(symb.arguments) == 1:
+                loc_prefix = ""
+                text = self._format_str_symb2str(symb.arguments[0])
+            # case when len(symb.arguments) == 2
+            else:
+                source, node = self._node_id2source_node[symb.arguments[0]]
+                loc_prefix = self._get_loc_prefix_from_source_node(source, node)
+                text = self._format_str_symb2str(symb.arguments[1])
+            error_msgs.append(f"{loc_prefix}{text}")
+        if len(error_msgs) > 0:
+            raise TransformError("\n".join(error_msgs))
+
+    def _format_str_symb2str(self, symb: Symbol) -> str:
+        """Convert format string symbol to python str."""
+        py_str: str
+        if symb.type == SymbolType.String:
+            py_str = symb.string
+        elif symb.match("node", 1):
+            try:
+                source, node = self._node_id2source_node[symb]
+                start, end = node.start_byte, node.end_byte
+                py_str = source.source_bytes[start:end].decode(source.encoding)
+            # if the tuple is not a node id
+            except ValueError as exc:  # nocoverage
+                raise ValueError(
+                    f"Symbol {symb} could not be converted to string."
+                ) from exc
+        elif (
+            symb.match("format", 2)
+            and symb.arguments[0].type == SymbolType.String
+            and symb.arguments[1].match("", 2)
+        ):
+            format_string = symb.arguments[0].string
+            inserts = self._cons_list2py(symb.arguments[1])
+            insert_strs: list[str] = [self._format_str_symb2str(s) for s in inserts]
+            py_str = format_string.format(*insert_strs)
+        elif (
+            symb.match("join", 2)
+            and symb.arguments[0].type == SymbolType.String
+            and symb.arguments[1].match("", 2)
+        ):
+            join_str = symb.arguments[0].string
+            inserts = self._cons_list2py(symb.arguments[1])
+            insert_strs = [self._format_str_symb2str(s) for s in inserts]
+            py_str = join_str.join(insert_strs)
+        else:
+            raise ValueError(f"Symbol {symb} could not be converted to string.")
+        return py_str
 
     def _topological_sort_edits(
         self, edit_symbols: Sequence[Symbol], deps: dict[Symbol, List[Symbol]]
@@ -366,54 +537,20 @@ class AspenTree:
         try:
             edit_symbols = list(tsorter.static_order())
         except CycleError as exc:
-            cycle = [str(symb) for symb in exc.args[1]]
+            cycle_str = " <-\n".join([str(symb) for symb in exc.args[1]])
             msg = (
                 "Transformation edits define cyclic dependencies via format strings. "
-                f"One such cycle: {cycle}."
+                f"One such cycle:\n{cycle_str}"
             )
             raise ValueError(msg) from exc
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                "Topological ordering found for edit symbols: %s",
+                " -> ".join([str(s) for s in edit_symbols]),
+            )
         return edit_symbols
 
-    def _format_str_symb2str(self, symb: Symbol) -> str:
-        """Convert string symbol or format string symbol to python str."""
-        py_str: str
-        if symb.type == SymbolType.String:
-            py_str = symb.string
-        elif symb.match("", 2):
-            try:
-                source, node = self.node_id2ts(symb)
-                start, end = node.start_byte, node.end_byte
-                py_str = source.source_bytes[start:end].decode(source.encoding)
-            # if the tuple is not a node id
-            except ValueError as exc:  # nocoverage
-                raise ValueError(
-                    f"Symbol {symb} could not be converted to string."
-                ) from exc
-        elif (
-            symb.match("format", 2)
-            and symb.arguments[0].type == SymbolType.String
-            and symb.arguments[1].match("", 2)
-        ):
-            format_string = symb.arguments[0].string
-            inserts = self.conslist2list(symb.arguments[1])
-            insert_strs: list[str] = [self._format_str_symb2str(s) for s in inserts]
-            py_str = format_string.format(*insert_strs)
-        elif (
-            symb.match("join", 2)
-            and symb.arguments[0].type == SymbolType.String
-            and symb.arguments[1].match("", 2)
-        ):
-            join_str = symb.arguments[0].string
-            inserts = self.conslist2list(symb.arguments[1])
-            insert_strs = [self._format_str_symb2str(s) for s in inserts]
-            py_str = join_str.join(insert_strs)
-        else:
-            raise ValueError(f"Symbol {symb} could not be converted to string.")
-        return py_str
-
-    def _edit_sources_from_symbs(
-        self, edit_symbols: Sequence[Symbol]
-    ) -> dict[Symbol, set[ts.Range]]:
+    def _edit_sources_from_symbs(self, edit_symbols: Sequence[Symbol]) -> set[Symbol]:
         """Apply edits to tree according to operations given in
         edit_symbols, and return dictionary who's keys are source
         symbols that have been edited, and the values are a set of
@@ -436,163 +573,196 @@ class AspenTree:
                 "Multiple edits defined for following nodes; "
                 f"expected one each: {dupes_str}."
             )
-        # print(edit_symbols)
-        edited_sources: dict[Symbol, set[ts.Range]] = {}
+        edited_sources: set[Symbol] = set()
         for symb in edit_symbols:
+            logger.info("Processing edit symbol: %s.", symb)
             replacement = symb.arguments[1]
-            target_source, target_node = self.node_id2ts(symb.arguments[0])
+            target_source, target_node = self._node_id2source_node[symb.arguments[0]]
             replacement_text = self._format_str_symb2str(replacement)
+            logger.debug(
+                "Formatted replacement text of of edit symbol: '%s'", replacement_text
+            )
             replacement_bytes = bytes(replacement_text, target_source.encoding)
-            target_source.source_bytes = ts_edit_tree(
+            if logger.isEnabledFor(logging.INFO):
+                logger.info(
+                    "Text of source %s before applying edit: '%s'",
+                    target_source.id,
+                    str(
+                        target_source.source_bytes, encoding=target_source.encoding
+                    ).replace("\n", "\\n"),
+                )
+            edit_range = calc_node_edit_range(target_node, replacement_bytes)
+            target_source.source_bytes = edit_tree(
                 target_source.tree,
-                target_node,
+                edit_range,
                 replacement_bytes,
                 target_source.source_bytes,
             )
-            if target_source.id not in edited_sources:
-                edited_sources[target_source.id] = set()
-            # changes to leaf nodes do not show up in tree changed_ranges method,
-            # so we manually mark these nodes as changed instead
-            if target_node.child_count == 0:
-                edited_sources[target_source.id].add(target_node.range)
-        # print(edited_sources)
+            if logger.isEnabledFor(logging.INFO):
+                logger.info(
+                    "Text of source %s after applying edit: '%s'",
+                    target_source.id,
+                    str(
+                        target_source.source_bytes, encoding=target_source.encoding
+                    ).replace("\n", "\\n"),
+                )
+            edited_sources.add(target_source.id)
         return edited_sources
 
-    def _process_log_symbs(self, log_symbols: list[Symbol]) -> None:
-        """Emit logs based on log symbols."""
-        error_msgs: list[str] = []
-        for symb in log_symbols:
-            log_level_symb = symb.arguments[1]
-            if (
-                log_level_symb.type == SymbolType.String
-                and log_level_symb.string in log_lvl_strs
-            ):
-                log_lvl_str = log_level_symb.string
-                log_lvl = log_lvl_str2int[log_lvl_str]
-            else:  # nocoverage
-                raise ValueError(
-                    f"Second argument of log symbol {symb} must be"
-                    f" one of {log_lvl_strs}."
-                )
-            source, node = self.node_id2ts(symb.arguments[0])
-            if source.path is not None:
-                source_str = str(source.path)
-            else:
-                source_str = str(source.id)
-            start_p, end_p = node.start_point, node.end_point
-            if start_p.row == end_p.row:
-                span_str = f"{start_p.row}:{start_p.column}-{end_p.column}"
-            else:
-                span_str = f"{start_p.row}:{start_p.column}-{end_p.row}:{end_p.column}"
-            text = self._format_str_symb2str(symb.arguments[2])
-            log_msg = f"{source_str}:{span_str}: {log_lvl_str}: {text}"
-            if log_lvl == 40:
-                error_msgs.append(log_msg)
-                print(log_msg)
-            else:
-                logger.log(log_lvl, log_msg)
-        if len(error_msgs) > 0:
-            raise TransformError("\n".join(error_msgs))
+    def _reparse_sources(self, edited_sources: set[Symbol]) -> None:
+        """Re-parse sources that have been edited, and update fact
+        representation based on the changed ranges of sources.
+        """
+        source_changes: dict[Symbol, list[Change]] = {}
+        for source_symb in edited_sources:
+            try:
+                source = self.sources[source_symb]
+            except KeyError as exc:  # nocoverage
+                raise ValueError(f"Unknown source symbol: {source_symb}.") from exc
+            logger.info("Reparsing source %s after edit.", source_symb)
+            old_tree = source.tree
+            new_tree = source.parser.parse(
+                source.source_bytes, old_tree, encoding=source.encoding
+            )
+            changes = get_tree_changes(old_tree, new_tree)
+            source.tree = new_tree
+            source_changes[source_symb] = changes
+        self._re_reify_changed_subtrees(source_changes)
 
-    def _on_transform_model(self, model: Model) -> Literal[False]:
-        """Model callback for transformation. Returns False as we only
-        expect one model."""
-        if logger.level == 10:  # nocoverage
+    def _re_reify_changed_subtrees(
+        self,
+        source_changes: dict[Symbol, list[Change]],
+    ) -> None:
+        """Re-reify subtrees who's syntactic structure changed due to
+        edit, and delete outdated facts from before edit."""
+
+        query2siblings: dict[Symbol, list[ts.Node]] = {}
+        new_facts: list[Symbol] = []
+        for source_symb, changes in source_changes.items():
+            for change in changes:
+                old_siblings, new_siblings = change
+                logger.debug(
+                    "Processing change in old tree at range: %s, %s",
+                    old_siblings[0].start_point,
+                    old_siblings[-1].end_point,
+                )
+                first_old_sib_path = self._py_node2path_symb(old_siblings[0])
+                query = Function(
+                    "re_reify_siblings",
+                    [source_symb, first_old_sib_path, Number(len(old_siblings))],
+                )
+                query2siblings[query] = new_siblings
+        control = Control(logger=clingo_logger)
+        parts = [base_program]
+        encodings = [
+            generic_util_path / "queries" / "re_reify_siblings.lp",
+            encoding_path / "transform" / "defined.lp",
+        ]
+        for encoding in encodings:
+            control.load(str(encoding))
+        with control.backend() as backend:
+            for query in query2siblings.keys():
+                query = Function("aspen", [Function("query", [query])])
+                atom = backend.add_atom(query)
+                backend.add_rule([atom])
+            for f in self.facts:
+                atom = backend.add_atom(f)
+                backend.add_rule([atom])
+        control.ground(parts=parts)
+        self.delete_facts: set[Symbol] = set()
+        self.query2_related_dict: defaultdict[Symbol, dict[str, Symbol]] = defaultdict(
+            dict
+        )
+
+        control.solve(on_model=self._on_re_reify_model)
+        print(self.query2_related_dict)
+        for query, siblings in query2siblings.items():
+            kwargs = self.query2_related_dict[query]
             logger.debug(
-                "Stable model obtained by applying transformation meta-encoding:"
+                "Processing query %s with siblings %s and args %s",
+                query,
+                siblings,
+                kwargs,
             )
-            for s in model.symbols(shown=True):
-                logger.debug(str(s))
+            source_symb = query.arguments[0]
+            source = self.sources[source_symb]
+            facts = self._reify_changed_siblings(source, siblings, **kwargs)
+            new_facts.extend(facts)
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                "Deleting following obsolete facts before adding new facts: %s",
+                " ".join([str(s) for s in self.delete_facts]),
+            )
+            logger.debug(
+                "Adding following new facts from re-reification(s): %s",
+                " ".join([str(s) for s in new_facts]),
+            )
+        self.facts = [f for f in self.facts if f not in self.delete_facts]
+        self.facts.extend(new_facts)
 
-        edit_symbols: list[Symbol] = []
-        next_transform_symbols: list[Symbol] = []
-        deps: defaultdict[Symbol, list[Symbol]] = defaultdict(list)
-        log_symbols: list[Symbol] = []
+    def _on_re_reify_model(self, model: Model) -> Literal[False]:
+        if logger.isEnabledFor(logging.INFO):  # nocoverage
+            logger.info(
+                ("Found stable model with shown atoms: %s"),
+                " ".join([str(s) + "." for s in model.symbols(shown=True)]),
+            )
+        related_sib_names = {
+            "parent",
+            "prev_sibling",
+            "next_sibling",
+        }
         for symb in model.symbols(shown=True):
-            if symb.match("aspen", 1):
-                arg = symb.arguments[0]
-                if arg.match("edit", 2):
-                    logger.info(
-                        "Edit derived by transformation meta-encoding: '%s'",
-                        str(symb),
-                    )
-                    edit_symbols.append(arg)
-                elif arg.match("comes_before", 2):
-                    deps[arg.arguments[1]].append(arg.arguments[0])
-                elif arg.match("next_program", 2):
-                    next_transform_symbols.append(arg)
-                elif arg.match("log", 3):
-                    log_symbols.append(arg)
-        if len(next_transform_symbols) > 1:
-            raise ValueError(
-                (
-                    "Multiple next_program-s defined, expected one: "
-                    f"{next_transform_symbols}."
-                )
-            )
-        if len(next_transform_symbols) > 0:
-            next_symb = next_transform_symbols[0]
+            print(symb)
             if (
-                next_symb.arguments[0].type != SymbolType.String
-                or next_symb.arguments[1].type != SymbolType.Function
-                or next_symb.arguments[1].name != ""
+                symb.match("aspen", 1)
+                and symb.arguments[0].match("return", 2)
+                and symb.arguments[0].arguments[0].match("re_reify_siblings", 3)
             ):
-                raise ValueError(
-                    "First argument of next_transform_program must be a string, "
-                    f"second must be a tuple, found: {next_symb}."
-                )
-            self.next_transform_program = (
-                next_symb.arguments[0].string,
-                next_symb.arguments[1].arguments,
-            )
-        self._process_log_symbs(log_symbols)
-        sorted_edit_symbols = self._topological_sort_edits(edit_symbols, deps)
-        edited_sources = self._edit_sources_from_symbs(sorted_edit_symbols)
-        self._reparse_sources(edited_sources)
+                query = symb.arguments[0].arguments[0]
+                ret_value = symb.arguments[0].arguments[1]
+                if ret_value.match("delete", 1):
+                    self.delete_facts.add(ret_value.arguments[0])
+                elif (
+                    ret_value.type == SymbolType.Function
+                    and ret_value.positive
+                    and len(ret_value.arguments) == 1
+                    and ret_value.name in related_sib_names
+                ):
+                    self.query2_related_dict[query][ret_value.name] = ret_value.arguments[
+                        0
+                    ]
         return False
 
-    def transform(
+    def _reify_changed_siblings(
         self,
+        source: Source,
+        siblings: list[ts.Node],
         *,
-        meta_files: Optional[Sequence[Path]] = None,
-        meta_string: Optional[str] = None,
-        initial_program: tuple[str, Sequence[Symbol]] = ("base", ()),
-        util_encodings: Sequence[str] = ("all.lp",),
-        control_options: Optional[Sequence[str]] = None,
-    ) -> None:
-        """Transform fact base via a meta-encoding."""
-        options = control_options if control_options is not None else []
-        if meta_files is not None:  # nocoverage
-            for f in meta_files:
-                if not f.is_file():
-                    raise IOError(f"File {f} not found.")
-        encoding_files = [str(f) for f in meta_files] if meta_files is not None else []
-        aspen_init_path = Path(aspen.__file__)
-        encoding_path = (aspen_init_path / ".." / "asp").resolve()
-        base_encodings = [encoding_path / "defined.lp", encoding_path / "edit.lp"]
-        encoding_files.extend([str(p) for p in base_encodings])
-        encoding_files.extend(
-            [str(encoding_path / "utils" / name) for name in util_encodings]
-        )
-        base_program = ("base", ())
-        self.next_transform_program = initial_program
-        parts: Sequence[tuple[str, Sequence[Symbol]]]
-        while self.next_transform_program is not None:
-            # print(self.next_transform_program)
-            control = Control(arguments=options, logger=clingo_logger)
-            for fi in encoding_files:
-                control.load(fi)
-            if meta_string is not None:
-                control.add(meta_string)
-            with control.backend() as backend:
-                for fact in self.facts:
-                    atom = backend.add_atom(fact)
-                    backend.add_rule([atom])
-            parts = (
-                [base_program]
-                if self.next_transform_program == base_program
-                else [base_program, self.next_transform_program]
-            )
-            control.ground(parts=parts)
-            self.next_transform_program = None
-            control.solve(on_model=self._on_transform_model)
+        parent: Optional[Symbol] = None,
+        prev_sibling: Optional[Symbol] = None,
+        next_sibling: Optional[Symbol] = None,
+    ) -> list[Symbol]:
+        """Given a new list of sibling nodes that have changed after
+        re-parsing, generate the list of facts that need to be added
+        to the factbase to reflect the new sibling nodes.
+
+        """
+        facts: list[Symbol] = []
+        encoding = source.encoding
+        for idx, node in enumerate(siblings):
+            subtree_facts = self._reify_ts_subtree(node, encoding)
+            node_id = subtree_facts[0].arguments[0]
+            facts.extend(subtree_facts)
+            if prev_sibling is not None:
+                facts.append(Function("next_sibling", [prev_sibling, node_id]))
+            if parent is not None and node.parent is not None:
+                facts.append(Function("child", [parent, node_id]))
+                child_index = node.parent.children.index(node)
+                field_name = node.parent.field_name_for_child(child_index)
+                if field_name is not None:
+                    facts.append(Function("field", [node_id, String(field_name)]))
+            if idx == len(siblings) - 1:
+                if next_sibling is not None:
+                    facts.append(Function("next_sibling", [node_id, next_sibling]))
+            prev_sibling = node_id
+        return facts

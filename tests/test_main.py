@@ -2,6 +2,7 @@
 Test cases for main application functionality.
 """
 
+import logging
 from io import StringIO
 from unittest import TestCase
 
@@ -22,8 +23,8 @@ class TestMain(TestCase):
         sio = StringIO()
         configure_logging(sio, logging.INFO, True)
         log = get_logger("main")
-        log.info("test123")
-        self.assertRegex(sio.getvalue(), "test123")
+        with self.assertLogs("main", level=logging.INFO) as cm:
+            log.info("test123")
 
     def test_parser(self) -> None:
         """

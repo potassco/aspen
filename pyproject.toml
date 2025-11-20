@@ -78,7 +78,7 @@ omit = ["*/aspen/__main__.py"]
 exclude_lines = ["assert", "nocoverage"]
 
 [tool.mypy]
-exclude = ["tests/*", "noxfile.py", "init.py"]
+exclude = ["noxfile.py", "init.py"]
 strict = true
 
 [tool.pylsp-mypy]

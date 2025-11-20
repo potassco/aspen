@@ -35,3 +35,4 @@ build
 _build
 _autosummary
 site
+.ropeproject
