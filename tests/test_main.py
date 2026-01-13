@@ -23,7 +23,7 @@ class TestMain(TestCase):
         sio = StringIO()
         configure_logging(sio, logging.INFO, True)
         log = get_logger("main")
-        with self.assertLogs("main", level=logging.INFO) as cm:
+        with self.assertLogs("main", level=logging.INFO):
             log.info("test123")
 
     def test_parser(self) -> None:

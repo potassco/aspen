@@ -4,7 +4,6 @@ import logging
 from collections import defaultdict
 from dataclasses import dataclass
 from graphlib import CycleError, TopologicalSorter
-from itertools import count
 from pathlib import Path
 from typing import Generator, List, Literal, Optional, Sequence
 
@@ -105,7 +104,6 @@ class AspenTree:
         self.facts: List[Symbol] = []
         self.next_transform_program: Optional[tuple[str, Sequence[Symbol]]] = None
         self._id_generator = id_counter() if id_generator is None else id_generator
-        self._source_counter = count()
         self._node_id2source_node: dict[Symbol, tuple[Source, ts.Node]] = {}
 
     def _path2py(self, path_symb: Symbol) -> list[int]:
@@ -200,9 +198,8 @@ class AspenTree:
             raise TypeError(
                 f"Argument 'source' must be of type {SourceInput}, got: {type(source)}."
             )
-
         if identifier is None:
-            identifier = Function("s", [Number(next(self._source_counter))])
+            identifier = Function("s", [Number(len(self.sources))])
         if logger.isEnabledFor(logging.INFO):
             logger.info(
                 "Assigning identifier %s to new source with contents: '%s'",
@@ -661,7 +658,7 @@ class AspenTree:
         for encoding in encodings:
             control.load(str(encoding))
         with control.backend() as backend:
-            for query in query2siblings.keys():
+            for query in query2siblings:
                 query = Function("aspen", [Function("query", [query])])
                 atom = backend.add_atom(query)
                 backend.add_rule([atom])
@@ -669,15 +666,44 @@ class AspenTree:
                 atom = backend.add_atom(f)
                 backend.add_rule([atom])
         control.ground(parts=parts)
-        self.delete_facts: set[Symbol] = set()
-        self.query2_related_dict: defaultdict[Symbol, dict[str, Symbol]] = defaultdict(
-            dict
-        )
+        delete_facts: set[Symbol] = set()
+        query2_related_dict: defaultdict[Symbol, dict[str, Symbol]] = defaultdict(dict)
 
-        control.solve(on_model=self._on_re_reify_model)
-        print(self.query2_related_dict)
+        def _on_re_reify_model(model: Model) -> Literal[False]:
+            if logger.isEnabledFor(logging.INFO):  # nocoverage
+                logger.info(
+                    ("Found stable model with shown atoms: %s"),
+                    " ".join([str(s) + "." for s in model.symbols(shown=True)]),
+                )
+            related_sib_names = {
+                "parent",
+                "prev_sibling",
+                "next_sibling",
+            }
+            for symb in model.symbols(shown=True):
+                if (
+                    symb.match("aspen", 1)
+                    and symb.arguments[0].match("return", 2)
+                    and symb.arguments[0].arguments[0].match("re_reify_siblings", 3)
+                ):
+                    query = symb.arguments[0].arguments[0]
+                    ret_value = symb.arguments[0].arguments[1]
+                    if ret_value.match("delete", 1):
+                        delete_facts.add(ret_value.arguments[0])
+                    elif (
+                        ret_value.type == SymbolType.Function
+                        and ret_value.positive
+                        and len(ret_value.arguments) == 1
+                        and ret_value.name in related_sib_names
+                    ):
+                        query2_related_dict[query][ret_value.name] = ret_value.arguments[
+                            0
+                        ]
+            return False
+
+        control.solve(on_model=_on_re_reify_model)
         for query, siblings in query2siblings.items():
-            kwargs = self.query2_related_dict[query]
+            kwargs = query2_related_dict[query]
             logger.debug(
                 "Processing query %s with siblings %s and args %s",
                 query,
@@ -691,47 +717,14 @@ class AspenTree:
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(
                 "Deleting following obsolete facts before adding new facts: %s",
-                " ".join([str(s) for s in self.delete_facts]),
+                " ".join([str(s) for s in delete_facts]),
             )
             logger.debug(
                 "Adding following new facts from re-reification(s): %s",
                 " ".join([str(s) for s in new_facts]),
             )
-        self.facts = [f for f in self.facts if f not in self.delete_facts]
+        self.facts = [f for f in self.facts if f not in delete_facts]
         self.facts.extend(new_facts)
-
-    def _on_re_reify_model(self, model: Model) -> Literal[False]:
-        if logger.isEnabledFor(logging.INFO):  # nocoverage
-            logger.info(
-                ("Found stable model with shown atoms: %s"),
-                " ".join([str(s) + "." for s in model.symbols(shown=True)]),
-            )
-        related_sib_names = {
-            "parent",
-            "prev_sibling",
-            "next_sibling",
-        }
-        for symb in model.symbols(shown=True):
-            print(symb)
-            if (
-                symb.match("aspen", 1)
-                and symb.arguments[0].match("return", 2)
-                and symb.arguments[0].arguments[0].match("re_reify_siblings", 3)
-            ):
-                query = symb.arguments[0].arguments[0]
-                ret_value = symb.arguments[0].arguments[1]
-                if ret_value.match("delete", 1):
-                    self.delete_facts.add(ret_value.arguments[0])
-                elif (
-                    ret_value.type == SymbolType.Function
-                    and ret_value.positive
-                    and len(ret_value.arguments) == 1
-                    and ret_value.name in related_sib_names
-                ):
-                    self.query2_related_dict[query][ret_value.name] = ret_value.arguments[
-                        0
-                    ]
-        return False
 
     def _reify_changed_siblings(
         self,

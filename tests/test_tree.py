@@ -3,7 +3,6 @@
 import logging
 import re
 import sys
-from itertools import count
 from pathlib import Path
 from typing import Literal, Optional, Sequence
 
@@ -36,7 +35,9 @@ configure_logging(sys.stderr, logging.DEBUG, sys.stderr.isatty())
 aspen_tree_logger = logging.getLogger("aspen.tree")
 
 
-class TestAspenTree(TestCaseWithRedirectedLogs):
+class TestAspenTree(
+    TestCaseWithRedirectedLogs
+):  # pylint: disable=too-many-public-methods
     """Test AspenTree class."""
 
     maxDiff = None
@@ -47,7 +48,7 @@ class TestAspenTree(TestCaseWithRedirectedLogs):
         source: SourceInput,
         path: Path,
         additional_expected_facts: Optional[list[Symbol]] = None,
-    ):
+    ) -> None:
         """Assert that parsing string of the given language results in
         symbols contained in the given file."""
         tree = AspenTree(default_language=language)
@@ -73,7 +74,7 @@ class TestAspenTree(TestCaseWithRedirectedLogs):
         meta_string: Optional[str] = None,
         initial_program: tuple[str, Sequence[Symbol]] = ("base", ()),
         control_options: Optional[Sequence[str]] = None,
-    ):
+    ) -> None:
         """Assert that transformation results in expected string, and
         check that reified representation is isomorphic."""
         tree = AspenTree(default_language=language)
@@ -115,9 +116,7 @@ class TestAspenTree(TestCaseWithRedirectedLogs):
         query_return_facts: set[Symbol] = set()
 
         def on_iso_model(model: Model) -> Literal[False]:
-            print("Printing iso model...")
             for symb in model.symbols(shown=True):
-                print(symb)
                 if (
                     symb.match("aspen", 1)
                     and symb.arguments[0].match("return", 2)
@@ -130,7 +129,6 @@ class TestAspenTree(TestCaseWithRedirectedLogs):
         aspen_tree_logger.setLevel(lvl)
         expected_return: set[Symbol] = set()
         expected_return.add(Function("isomorphic", []))
-        print(query_return_facts)
         self.assertSetEqual(query_return_facts, expected_return)
 
     def assert_transform_logs(
@@ -144,7 +142,7 @@ class TestAspenTree(TestCaseWithRedirectedLogs):
         meta_string: Optional[str] = None,
         initial_program: tuple[str, Sequence[Symbol]] = ("base", ()),
         control_options: Optional[Sequence[str]] = None,
-    ):
+    ) -> None:
         """Assert that transformation logs messages, or raises error."""
         tree = AspenTree(default_language=language)
         tree.parse(source)
@@ -194,27 +192,35 @@ class TestAspenTree(TestCaseWithRedirectedLogs):
         """Test conversion of symbolic path to python list"""
         tree = AspenTree(default_language=clingo_lang)
         good_path = parse_term("(1, (2, ()))")
-        self.assertListEqual(tree._path2py(good_path), [1, 2])
+        self.assertListEqual(
+            tree._path2py(good_path), [1, 2]  # pylint: disable=protected-access
+        )
         inverted_path = parse_term("(((), 2), 1)")
         re_str = r"Malformed path symbol"
         with self.assertRaisesRegex(ValueError, re_str):
-            tree._path2py(inverted_path)
+            tree._path2py(inverted_path)  # pylint: disable=protected-access
         bad_element_path = parse_term("(a, (b, ()))")
         with self.assertRaisesRegex(ValueError, re_str):
-            tree._path2py(bad_element_path)
+            tree._path2py(bad_element_path)  # pylint: disable=protected-access
 
     def test_conslist2pylist(self):
         """Test conversion of symbolic cons list to python list"""
         tree = AspenTree(default_language=clingo_lang)
         good_path = parse_term("(1, (2, ()))")
-        self.assertListEqual(tree._cons_list2py(good_path), [Number(1), Number(2)])
+        self.assertListEqual(
+            tree._cons_list2py(good_path),  # pylint: disable=protected-access
+            [Number(1), Number(2)],
+        )
         inverted_path = parse_term("(((), 2), 1)")
         re_str = r"Expected tuple of arity 2"
         with self.assertRaisesRegex(ValueError, re_str):
-            tree._cons_list2py(inverted_path)
+            tree._cons_list2py(inverted_path)  # pylint: disable=protected-access
         const_cons_list = parse_term("(a, (b, ()))")
         const_py_list = [Function("a", []), Function("b", [])]
-        self.assertListEqual(tree._cons_list2py(const_cons_list), const_py_list)
+        self.assertListEqual(
+            tree._cons_list2py(const_cons_list),  # pylint: disable=protected-access
+            const_py_list,
+        )
 
     def test_node2path_symb(self):
         """Test calculation of path symbol of a tree sitter node."""
@@ -222,7 +228,7 @@ class TestAspenTree(TestCaseWithRedirectedLogs):
         source = tree.parse("a(1).")
         node = tree.sources[source].tree.root_node.child(0).child(0).child(0).child(2)
         expected_path_symb = parse_term("(0, (0, (0, (2, ()))))")
-        path_symb = tree._py_node2path_symb(node)
+        path_symb = tree._py_node2path_symb(node)  # pylint: disable=protected-access
         self.assertEqual(path_symb, expected_path_symb)
 
     def test_source_path_symb2node(self):
@@ -231,18 +237,26 @@ class TestAspenTree(TestCaseWithRedirectedLogs):
         source_id = parse_term("test(42)")
         tree.parse("a.", identifier=source_id)
         source_path_syb = parse_term("(test(42), (0, ( 0, ())))")
-        source, node = tree._source_path2py_source_node(source_path_syb)
+        source, node = (
+            tree._source_path2py_source_node(  # pylint: disable=protected-access
+                source_path_syb
+            )
+        )
         expected_source = tree.sources[source_id]
         self.assertEqual(source, expected_source)
         expected_node = tree.sources[source_id].tree.root_node.child(0).child(0)
         self.assertEqual(node, expected_node)
         unknown_source_node_id = parse_term("(foo(41),())")
         with self.assertRaisesRegex(ValueError, r"Unknown source symbol."):
-            tree._source_path2py_source_node(unknown_source_node_id)
+            tree._source_path2py_source_node(  # pylint: disable=protected-access
+                unknown_source_node_id
+            )
         non_existent_path_node_id = parse_term("(test(42),(2, (0, ())))")
         regex_str = r"No node found in tree at path"
         with self.assertRaisesRegex(ValueError, regex_str):
-            tree._source_path2py_source_node(non_existent_path_node_id)
+            tree._source_path2py_source_node(  # pylint: disable=protected-access
+                non_existent_path_node_id
+            )
 
     def test_parse_strings(self):
         """Test parsing of input strings."""
@@ -345,8 +359,10 @@ class TestAspenTree(TestCaseWithRedirectedLogs):
         tree = AspenTree(default_language=clingo_lang)
         tree.parse("a :- b.")
         meta_str = (
-            'aspen(edit(node(N), format("{0}", (node(M), ())))) :- leaf_text(N, "a"), leaf_text(M, "b").'
-            'aspen(edit(node(M), format("{0}", (node(N), ())))) :- leaf_text(N, "a"), leaf_text(M, "b").'
+            'aspen(edit(node(N), format("{0}", (node(M), ()))))'
+            ' :- leaf_text(N, "a"), leaf_text(M, "b").'
+            'aspen(edit(node(M), format("{0}", (node(N), ()))))'
+            ' :- leaf_text(N, "a"), leaf_text(M, "b").'
         )
         error_regex = (
             r"Transformation edits define cyclic dependencies via format strings\. "
@@ -358,7 +374,8 @@ class TestAspenTree(TestCaseWithRedirectedLogs):
             source="a(b).",
             meta_files=[encoding_dir / "add_var.lp"],
             meta_string=(
-                '#program add_var_to_atoms(var). aspen(edit(node(N),"c")) :- leaf_text(N,"b").'
+                '#program add_var_to_atoms(var). aspen(edit(node(N),"c")) '
+                ':- leaf_text(N,"b").'
             ),
             initial_program=("add_var_to_atoms", [String("X")]),
             expected="a(c,X).",
@@ -421,7 +438,8 @@ p(1
         self.assert_transform_logs(
             log_level="INFO",
             message2num_matches={
-                r"/var/home/amicsi/ghq/github.com/krr-up/aspen/tests/asp/encodings/multiline.lp:0:0-2:0: This is a log for a node": 1,
+                r"/var/home/amicsi/ghq/github.com/krr-up/aspen/tests/asp/"
+                r"encodings/multiline.lp:0:0-2:0: This is a log for a node": 1,
                 r" This is a log without location.": 1,
             },
             language=clingo_lang,
@@ -434,7 +452,8 @@ p(1
         self.assert_transform_logs(
             log_level="WARNING",
             message2num_matches={
-                r"/var/home/amicsi/ghq/github.com/krr-up/aspen/tests/asp/encodings/a.lp:0:0-2: This is a log for node 'a.'.": 1,
+                r"/var/home/amicsi/ghq/github.com/krr-up/aspen/tests/asp/"
+                r"encodings/a.lp:0:0-2: This is a log for node 'a.'.": 1,
                 r" This is a log without location.": 1,
             },
             language=clingo_lang,
@@ -460,11 +479,32 @@ p(1
             meta_files=[encoding_dir / "raise_error_no_loc.lp"],
         )
 
+    # def test_transform_metasp_telingo_sugar(self):
+    #     """Integration test for transformation - transform input,
+    #     replacing syntactic sugar."""
+    #     self.assert_transform_isomorphic(
+    #         language=clingo_lang,
+    #         source=(input_dir / "telingo_sugar_input.lp"),
+    #         meta_files=[
+    #             encoding_dir / "replace_sugar.lp",
+    #             input_dir / "telingo_sugar.lp",
+    #         ],
+    #         expected=output_dir / "telingo_sugar_output_intermediate.lp",
+    #     )
 
-#     def test_transform_metasp_telingo_sugar(self):
-#         """Integration test for transformation - transform input,
-#         replacing syntactic sugar."""
-#         self.assert_transform_isomorphic(
+
+#             language=clingo_lang,
+#             source=(input_dir / "telingo_sugar_input.lp"),
+#             meta_files=[
+#                 encoding_dir / "replace_sugar.lp",
+#                 input_dir / "telingo_sugar.lp",
+#             ],
+#             util_encodings={
+#                 "generic": ("all.lp", "show_all.lp"),
+#                 "clingo": ("symbol_signature.lp", "show_all.lp"),
+#             },
+#             expected=output_dir / "telingo_sugar_output_intermediate.lp",
+#         )
 #             language=clingo_lang,
 #             source=(input_dir / "telingo_sugar_input.lp"),
 #             meta_files=[

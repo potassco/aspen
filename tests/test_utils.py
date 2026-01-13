@@ -114,8 +114,6 @@ class TestTreeSitterUtils(TestCaseWithRedirectedLogs):
         expected_changes = self.get_changes_from_descriptors(
             old_tree, new_tree, expected_change_descriptors
         )
-        print(changes)
-        print(expected_changes)
         self.assertListEqual(changes, expected_changes)
 
     def test_changes_no_edit(self) -> None:

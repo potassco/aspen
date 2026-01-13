@@ -239,6 +239,8 @@ def get_largest_ancestor_with_same_range(node: ts.Node) -> ts.Node:
 
 
 def get_cover(ancestor_node: ts.Node, start: int, end: int) -> list[ts.Node]:
+    """Get list of sibling nodes that that are ancestors of
+    anscestor_node that cover the input byte range."""
     smallest_span_node = ancestor_node.descendant_for_byte_range(start, end)
     if smallest_span_node is None:  # nocoverage
         raise ValueError(
