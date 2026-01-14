@@ -38,6 +38,41 @@ class TestTreeSitterUtils(TestCaseWithRedirectedLogs):
 
     maxDiff = None
 
+    def get_siblings_from_descriptor(
+        self,
+        descriptor: Optional[SiblingsDescriptor],
+        tree: Tree,
+    ) -> list[Node]:
+        """Given a tree and an input descriptor, describing a list of
+        sibling nodes via a path to the first sibling and a length,
+        return the described siblings from the tree.
+
+        """
+        if descriptor is None:
+            return []
+        path, length = descriptor
+        sibling = get_node_at_path(tree, path, reverse=True)
+        # this case analysis should not be necessary, but
+        # tree sitter is a bit buggy, and in test case
+        # test_changes_range_edit3 this branch gives
+        # incorrect result
+        if sibling.parent is None:  # nocoverage
+            siblings = [sibling]
+            length -= 1
+            while length > 0:
+                siblings.append(sibling)
+                length -= 1
+                next_sib = sibling.next_sibling
+                if next_sib is not None:
+                    sibling = next_sib
+                else:
+                    break
+        else:
+            parent = sibling.parent
+            idx = parent.children.index(sibling)
+            siblings = parent.children[idx : idx + length]
+        return siblings
+
     def get_changes_from_descriptors(
         self,
         old_tree: Tree,
@@ -45,34 +80,13 @@ class TestTreeSitterUtils(TestCaseWithRedirectedLogs):
         expected_change_descriptors: list[ExpectedChangeDescriptor],
     ) -> list[Change]:
         """Given an old tree, a new tree (generated via re-parsing),
-        retrieve the list of changes desribed by thin input list of
+        retrieve the list of changes desribed by the input list of
         change descriptors."""
         expected_changes = []
         for exp_change_desc in expected_change_descriptors:
-            expected_change_list: list[list[Node]] = []
-            for siblings_desc, tree in zip(exp_change_desc, [old_tree, new_tree]):
-                if siblings_desc is None:
-                    expected_change_list.append([])
-                else:
-                    path, length = siblings_desc
-                    sibling = get_node_at_path(tree, path, reverse=True)
-                    # this case analysis should not be necessary, but
-                    # tree sitter is a bit buggy, and in test case
-                    # test_changes_range_edit3 this branch gives
-                    # incorrect result
-                    if sibling.parent is None:  # nocoverage
-                        siblings = [sibling]
-                        length -= 1
-                        while length > 0 and sibling is not None:
-                            sibling = sibling.next_sibling
-                            siblings.append(sibling)
-                            length -= 1
-                    else:
-                        parent = sibling.parent
-                        idx = parent.children.index(sibling)
-                        siblings = parent.children[idx : idx + length]
-                    expected_change_list.append(siblings)
-            expected_changes.append(tuple(expected_change_list))
+            old_siblings = self.get_siblings_from_descriptor(exp_change_desc[0], old_tree)
+            new_siblings = self.get_siblings_from_descriptor(exp_change_desc[1], new_tree)
+            expected_changes.append((old_siblings, new_siblings))
         return expected_changes
 
     def assert_edits_changes_equal(

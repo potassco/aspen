@@ -57,7 +57,7 @@ class TransformError(Exception):
     error."""
 
 
-def id_counter(start: int = 0, step: int = 1) -> Generator[Symbol]:
+def id_counter(start: int = 0, step: int = 1) -> Generator[Symbol, None, None]:
     """Simple infinite generator that yields clingo Numbers, starting
     from start, with increment given by step."""
     n = start
@@ -96,7 +96,7 @@ class AspenTree:
         self,
         default_language: Optional[ts.Language] = None,
         default_encoding: StringEncoding = "utf8",
-        id_generator: Optional[Generator[Symbol]] = None,
+        id_generator: Optional[Generator[Symbol, None, None]] = None,
     ):
         self.sources: dict[Symbol, Source] = {}
         self.default_language = default_language

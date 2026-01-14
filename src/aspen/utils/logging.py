@@ -8,16 +8,14 @@ logging.
 import logging
 import sys
 from functools import partial
-from logging import CRITICAL, DEBUG, ERROR, INFO, NOTSET, WARNING, StreamHandler
-from typing import Callable, Literal, Optional, TextIO
+from logging import StreamHandler
+from typing import Callable, Optional, TextIO
 from unittest import TestCase
 
 import tree_sitter as ts
 
 # pylint: disable=import-error,no-name-in-module
 from clingo.core import MessageCode
-
-LOGLVL = Literal[NOTSET, DEBUG, INFO, WARNING, ERROR, CRITICAL]
 
 COLORS = {
     "GREY": "\033[90m",

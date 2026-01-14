@@ -21,7 +21,7 @@ Homepage = "https://github.com/krr-up/aspen.git/"
 [project.optional-dependencies]
 format = ["black", "isort", "autoflake"]
 lint_pylint = ["pylint", "aspen[test]"]
-typecheck = ["types-setuptools", "mypy"]
+typecheck = ["types-setuptools", "mypy", "tree-sitter-clingo"]
 test = ["coverage[toml]", "tree-sitter-clingo"]
 doc = ["mkdocs", "mkdocs-material", "mkdocstrings[python]", "mkdoclingo"]
 lsp = ["python-lsp-server", "rope", "pylsp-mypy", "pylsp-rope", "python-lsp-black"]
@@ -84,5 +84,5 @@ strict = true
 [tool.pylsp-mypy]
 enabled = true
 live_mode = true
-exclude = ["tests/*", "noxfile.py", "init.py"]
+exclude = ["noxfile.py", "init.py"]
 strict = true

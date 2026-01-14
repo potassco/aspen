@@ -22,6 +22,7 @@ from aspen.tree import (
     id_counter,
 )
 from aspen.utils.logging import TestCaseWithRedirectedLogs, configure_logging
+from aspen.utils.tree_sitter_utils import get_node_at_path
 
 asp_dir = (Path(__file__) / ".." / "asp").resolve()
 encoding_dir = asp_dir / "encodings"
@@ -35,12 +36,8 @@ configure_logging(sys.stderr, logging.DEBUG, sys.stderr.isatty())
 aspen_tree_logger = logging.getLogger("aspen.tree")
 
 
-class TestAspenTree(
-    TestCaseWithRedirectedLogs
-):  # pylint: disable=too-many-public-methods
-    """Test AspenTree class."""
-
-    maxDiff = None
+class AspenTestCase(TestCaseWithRedirectedLogs):
+    """Base class for building test cases related to AspenTree class."""
 
     def assert_parse_equals_file(
         self,
@@ -176,7 +173,7 @@ class TestAspenTree(
         meta_string: Optional[str] = None,
         initial_program: tuple[str, Sequence[Symbol]] = ("base", ()),
         control_options: Optional[Sequence[str]] = None,
-    ):
+    ) -> None:
         """Assert that transformation raises error."""
         tree = AspenTree(default_language=language)
         tree.parse(source)
@@ -188,7 +185,11 @@ class TestAspenTree(
                 control_options=control_options,
             )
 
-    def test_path2py(self):
+
+class TestAspenTree(AspenTestCase):  # pylint: disable=too-many-public-methods
+    """Test suite for AspenTree class."""
+
+    def test_path2py(self) -> None:
         """Test conversion of symbolic path to python list"""
         tree = AspenTree(default_language=clingo_lang)
         good_path = parse_term("(1, (2, ()))")
@@ -203,7 +204,7 @@ class TestAspenTree(
         with self.assertRaisesRegex(ValueError, re_str):
             tree._path2py(bad_element_path)  # pylint: disable=protected-access
 
-    def test_conslist2pylist(self):
+    def test_conslist2pylist(self) -> None:
         """Test conversion of symbolic cons list to python list"""
         tree = AspenTree(default_language=clingo_lang)
         good_path = parse_term("(1, (2, ()))")
@@ -222,16 +223,16 @@ class TestAspenTree(
             const_py_list,
         )
 
-    def test_node2path_symb(self):
+    def test_node2path_symb(self) -> None:
         """Test calculation of path symbol of a tree sitter node."""
         tree = AspenTree(default_language=clingo_lang)
         source = tree.parse("a(1).")
-        node = tree.sources[source].tree.root_node.child(0).child(0).child(0).child(2)
+        node = get_node_at_path(tree.sources[source].tree, [0, 0, 0, 2], reverse=True)
         expected_path_symb = parse_term("(0, (0, (0, (2, ()))))")
         path_symb = tree._py_node2path_symb(node)  # pylint: disable=protected-access
         self.assertEqual(path_symb, expected_path_symb)
 
-    def test_source_path_symb2node(self):
+    def test_source_path_symb2node(self) -> None:
         """Test conversion of node id to tree sitter tree node."""
         tree = AspenTree(default_language=clingo_lang)
         source_id = parse_term("test(42)")
@@ -244,7 +245,9 @@ class TestAspenTree(
         )
         expected_source = tree.sources[source_id]
         self.assertEqual(source, expected_source)
-        expected_node = tree.sources[source_id].tree.root_node.child(0).child(0)
+        expected_node = get_node_at_path(
+            tree.sources[source_id].tree, [0, 0], reverse=True
+        )
         self.assertEqual(node, expected_node)
         unknown_source_node_id = parse_term("(foo(41),())")
         with self.assertRaisesRegex(ValueError, r"Unknown source symbol."):
@@ -258,13 +261,13 @@ class TestAspenTree(
                 non_existent_path_node_id
             )
 
-    def test_parse_strings(self):
+    def test_parse_strings(self) -> None:
         """Test parsing of input strings."""
         self.assert_parse_equals_file(
             clingo_lang, "a :- b.", output_dir / "ab_reified.txt"
         )
 
-    def test_parse_files(self):
+    def test_parse_files(self) -> None:
         """Test parsing of input files."""
         s0 = Function("s", [Number(0)])
         path_fact = Function(
@@ -278,13 +281,13 @@ class TestAspenTree(
             additional_expected_facts=[path_fact],
         )
 
-    def test_reify_error_missing_node(self):
+    def test_reify_error_missing_node(self) -> None:
         """Test reification of error and missing node."""
         self.assert_parse_equals_file(
             clingo_lang, "+a.", output_dir / "error_missing_reified.txt"
         )
 
-    def test_parse_no_lang(self):
+    def test_parse_no_lang(self) -> None:
         """Test that parse method raises ValueError when no language
         is given and no default language is given."""
         tree = AspenTree()
@@ -292,7 +295,7 @@ class TestAspenTree(
         with self.assertRaisesRegex(ValueError, regex):
             tree.parse("a.")
 
-    def test_transform_add_vars(self):
+    def test_transform_add_vars(self) -> None:
         """Test transformation, adding variables to atoms."""
         self.assert_transform_isomorphic(
             language=clingo_lang,
@@ -302,7 +305,7 @@ class TestAspenTree(
             expected="a(X) :- b(X).",
         )
 
-    def test_transform_join(self):
+    def test_transform_join(self) -> None:
         """Test transformation that uses a string join."""
         self.assert_transform_isomorphic(
             language=clingo_lang,
@@ -311,7 +314,7 @@ class TestAspenTree(
             expected="a :- b; c.",
         )
 
-    def test_transform_join_dependency(self):
+    def test_transform_join_dependency(self) -> None:
         """Test transformation that uses a string join and dependencies."""
         self.assert_transform_isomorphic(
             language=clingo_lang,
@@ -320,7 +323,7 @@ class TestAspenTree(
             expected="a :- d; c. :- d.",
         )
 
-    def test_transform_multiple_edits_same_node(self):
+    def test_transform_multiple_edits_same_node(self) -> None:
         """Test that transformation raises error when defining
         multiple edits for the same node."""
         tree = AspenTree(default_language=clingo_lang)
@@ -333,7 +336,7 @@ class TestAspenTree(
         with self.assertRaisesRegex(ValueError, regex_str):
             tree.transform(meta_string=meta_str)
 
-    def test_transform_spanning_ancestor(self):
+    def test_transform_spanning_ancestor(self) -> None:
         """Test that transformation succeeds when editing a node which
         has ancestors that span the same byte range."""
         self.assert_transform_isomorphic(
@@ -343,7 +346,7 @@ class TestAspenTree(
             expected="b.",
         )
 
-    def test_transform_bad_edit(self):
+    def test_transform_bad_edit(self) -> None:
         """Test that tranformation raises error when invalid
         replacement is used in aspen(edit(S,R))."""
         tree = AspenTree(default_language=clingo_lang)
@@ -353,7 +356,7 @@ class TestAspenTree(
         with self.assertRaisesRegex(ValueError, regex_str):
             tree.transform(meta_string=meta_str)
 
-    def test_transform_dependencies(self):
+    def test_transform_dependencies(self) -> None:
         """Test that edits in transformation are applied in the
         correct order to satisfy implicit dependencies between edits"""
         tree = AspenTree(default_language=clingo_lang)
@@ -381,7 +384,7 @@ class TestAspenTree(
             expected="a(c,X).",
         )
 
-    def test_transform_multiple_steps(self):
+    def test_transform_multiple_steps(self) -> None:
         """Test that transformation works as expected when multiple
         steps are defined."""
         self.assert_transform_isomorphic(
@@ -395,7 +398,7 @@ class TestAspenTree(
             expected="b(X) :- b(X).",
         )
 
-    def test_transform_bad_next_step(self):
+    def test_transform_bad_next_step(self) -> None:
         """Test that transformation raises error when multiple next
         programs are derived."""
         tree = AspenTree(default_language=clingo_lang)
@@ -412,7 +415,7 @@ class TestAspenTree(
         with self.assertRaisesRegex(ValueError, error_regex):
             tree.transform(meta_string=meta_str)
 
-    def test_transform_multiline(self):
+    def test_transform_multiline(self) -> None:
         """Test transform where multiline replacement occurs."""
         meta_str = """aspen(edit(node(N),format("{0}", (node(M),())))) :-
  leaf_text(N,"a"), type(M,"symbolic_atom"), child(M,L), type(L,"terms")."""
@@ -433,35 +436,39 @@ p(1
 2).""",
         )
 
-    def test_transform_logs_info(self):
+    def test_transform_logs_info(self) -> None:
         """Test that tranformation logs messages as expected."""
+        source_path = encoding_dir / "multiline.lp"
+        loc_log_str = str(source_path).replace("\\", "\\\\")
+        loc_log_str += r":0:0-2:0: This is a log for a node"
         self.assert_transform_logs(
             log_level="INFO",
             message2num_matches={
-                r"/var/home/amicsi/ghq/github.com/krr-up/aspen/tests/asp/"
-                r"encodings/multiline.lp:0:0-2:0: This is a log for a node": 1,
+                loc_log_str: 1,
                 r" This is a log without location.": 1,
             },
             language=clingo_lang,
-            source=encoding_dir / "multiline.lp",
+            source=source_path,
             meta_files=[encoding_dir / "log_info.lp"],
         )
 
-    def test_transform_logs_warn(self):
+    def test_transform_logs_warn(self) -> None:
         """Test that tranformation logs messages as expected."""
+        source_path = encoding_dir / "a.lp"
+        loc_log_str = str(source_path).replace("\\", "\\\\")
+        loc_log_str += r":0:0-2: This is a log for node 'a.'."
         self.assert_transform_logs(
             log_level="WARNING",
             message2num_matches={
-                r"/var/home/amicsi/ghq/github.com/krr-up/aspen/tests/asp/"
-                r"encodings/a.lp:0:0-2: This is a log for node 'a.'.": 1,
+                loc_log_str: 1,
                 r" This is a log without location.": 1,
             },
             language=clingo_lang,
-            source=encoding_dir / "a.lp",
+            source=source_path,
             meta_files=[encoding_dir / "log_warning.lp"],
         )
 
-    def test_transform_raises(self):
+    def test_transform_raises(self) -> None:
         """Test that transformation raises error as expected."""
         self.assert_transform_raises(
             message_regex=r"s\(0\):0:0-1: This is an error for node 'a'.",
@@ -470,7 +477,7 @@ p(1
             meta_files=[encoding_dir / "raise_error.lp"],
         )
 
-    def test_transform_raises_no_loc(self):
+    def test_transform_raises_no_loc(self) -> None:
         """Test that transformation raises error as expected."""
         self.assert_transform_raises(
             message_regex=r"This is an error with no location.",

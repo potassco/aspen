@@ -6,7 +6,6 @@ import logging
 from io import StringIO
 from unittest import TestCase
 
-from aspen.utils import logging
 from aspen.utils.logging import configure_logging, get_logger
 from aspen.utils.parser import get_parser
 
