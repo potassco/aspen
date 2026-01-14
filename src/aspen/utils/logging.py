@@ -6,20 +6,16 @@ logging.
 """
 
 import logging
+import sys
 from functools import partial
-from typing import Callable, TextIO
+from logging import StreamHandler
+from typing import Callable, Optional, TextIO
+from unittest import TestCase
 
 import tree_sitter as ts
 
 # pylint: disable=import-error,no-name-in-module
 from clingo.core import MessageCode
-
-NOTSET = logging.NOTSET
-DEBUG = logging.DEBUG
-INFO = logging.INFO
-WARNING = logging.WARNING
-ERROR = logging.ERROR
-CRITICAL = logging.CRITICAL
 
 COLORS = {
     "GREY": "\033[90m",
@@ -136,3 +132,76 @@ def get_ts_logger(
 
     """
     return partial(log_ts_message, logger=logger)
+
+
+# class to redirect logs
+# https://stackoverflow.com/questions/69200881/how-to-get-python-unittest
+# -to-show-log-messages-only-on-failed-tests
+class LoggerRedirector:  # nocoverage
+    """Class with methods to update the stream on the log handler to
+    point to the buffer unittest has set up for capturing the test
+    output, as well as to reset them after test has run.
+
+    """
+
+    # Keep a reference to the real streams so we can revert
+    _real_stdout = sys.stdout
+    _real_stderr = sys.stderr
+
+    @staticmethod
+    def all_loggers() -> list[logging.Logger]:
+        "Store all loggers."
+        loggers = [logging.getLogger()]
+        loggers += [
+            logging.getLogger(name)
+            for name in logging.root.manager.loggerDict  # pylint: disable=no-member
+        ]
+        return loggers
+
+    @classmethod
+    def redirect_loggers(
+        cls, fake_stdout: Optional[TextIO] = None, fake_stderr: Optional[TextIO] = None
+    ) -> None:
+        "Redirect loggers before test."
+        if (not fake_stdout or fake_stdout is cls._real_stdout) and (
+            not fake_stderr or fake_stderr is cls._real_stderr
+        ):
+            return
+        for logger in cls.all_loggers():
+            for handler in logger.handlers:
+                if isinstance(handler, StreamHandler):
+                    if handler.stream is cls._real_stdout:
+                        handler.setStream(fake_stdout)
+                    if handler.stream is cls._real_stderr:
+                        handler.setStream(fake_stderr)
+
+    @classmethod
+    def reset_loggers(
+        cls, fake_stdout: Optional[TextIO] = None, fake_stderr: Optional[TextIO] = None
+    ) -> None:
+        "Reset loggers after test"
+        if (not fake_stdout or fake_stdout is cls._real_stdout) and (
+            not fake_stderr or fake_stderr is cls._real_stderr
+        ):
+            return
+        for logger in cls.all_loggers():
+            for handler in logger.handlers:
+                if isinstance(handler, StreamHandler):
+                    if handler.stream is fake_stdout:
+                        handler.setStream(cls._real_stdout)
+                    if handler.stream is fake_stderr:
+                        handler.setStream(cls._real_stderr)
+
+
+class TestCaseWithRedirectedLogs(TestCase):
+    """A TestCase subclass that redirects stdin and stderr in such a
+    fashion as to redirect log handlers to the buffer unittest
+    uses. This allows us to display logs when a test fails."""
+
+    def setUp(self) -> None:
+        # unittest has reassigned sys.stdout and sys.stderr by this point
+        LoggerRedirector.redirect_loggers(fake_stdout=sys.stdout, fake_stderr=sys.stderr)
+
+    def tearDown(self) -> None:
+        LoggerRedirector.reset_loggers(fake_stdout=sys.stdout, fake_stderr=sys.stderr)
+        # unittest will revert sys.stdout and sys.stderr after this

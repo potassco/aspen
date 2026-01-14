@@ -1,0 +1,11 @@
+#defined source_root/2.
+#defined node/1.
+#defined type/2.
+#defined error/1.
+#defined missing/1.
+#defined extra/1.
+#defined leaf_text/2.
+#defined field/2.
+#defined child/2.
+#defined next_sibling/2.
+#defined aspen/1.
