@@ -1,30 +1,13 @@
 """Unit tests for module aspen.tree"""
 
-import logging
-import sys
-from pathlib import Path
-
-import tree_sitter_clingo as ts_clingo
-
 # pylint: disable=import-error,no-name-in-module
 from clingo.symbol import Function, Number, String, parse_term
-from tree_sitter import Language
 
 from aspen.tree import AspenTree
-from aspen.utils.logging import configure_logging
 from aspen.utils.testing import AspenTestCase
 from aspen.utils.tree_sitter_utils import get_node_at_path
 
-asp_dir = (Path(__file__) / ".." / "asp").resolve()
-encoding_dir = asp_dir / "encodings"
-input_dir = asp_dir / "inputs"
-output_dir = asp_dir / "outputs"
-
-clingo_lang = Language(ts_clingo.language())
-
-configure_logging(sys.stderr, logging.DEBUG, sys.stderr.isatty())
-
-aspen_tree_logger = logging.getLogger("aspen.tree")
+from .common import clingo_lang, encoding_dir, input_dir, output_dir
 
 
 class TestAspenTree(AspenTestCase):  # pylint: disable=too-many-public-methods

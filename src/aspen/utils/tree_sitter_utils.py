@@ -1,5 +1,5 @@
 """
-Utilities for printing.
+Utilities related to tree-sitter.
 """
 
 import os
@@ -173,57 +173,73 @@ def edit_tree(
     return new_source
 
 
-def _accumulate_changed_nodes(cursor: ts.TreeCursor, acc: list[list[ts.Node]]) -> bool:
-    """Accumulate nodes for which all descendants have changes."""
-    node = cursor.node
-    if not node.has_changes:  # type: ignore
+def _accumulate_changed_nodes(
+    cursor: ts.TreeCursor,
+    acc: list[list[ts.Node]],
+    skip_ranges: Optional[list[tuple[int, int]]] = None,
+) -> bool:
+    """Accumulate sequences of sibling nodes for which all descendants
+    have changes. Return true if node under cursor has changes, does
+    not fall into one of the byte ranges given by the optional
+    skip_ranges, and all the descendands of the node have changes.
+
+    """
+    parent_node = cursor.node
+    assert parent_node is not None
+    if not parent_node.has_changes:
         return False
-    if cursor.goto_first_child():
-        all_changed_children: list[list[ts.Node]] = []
-        changed_siblings: list[ts.Node] = []
-        num_changed = 0
-        if _accumulate_changed_nodes(cursor, acc):
+    if skip_ranges is not None and len(skip_ranges) > 0:
+        start, end = parent_node.start_byte, parent_node.end_byte
+        # narrow down skip ranges to the ones that intersect the current node
+        # we can do this, as non-intersecting ranges also will not intersect
+        # any of the current node's children.
+        skip_ranges = [r for r in skip_ranges if r[0] < end and start < r[1]]
+        for range_start, range_end in skip_ranges:
+            if range_start <= start and end <= range_end:
+                return False
+    parent_has_children = cursor.goto_first_child()
+    sibling_exists = parent_has_children
+    siblings_with_all_changed_descs_acc: list[list[ts.Node]] = []
+    siblings_with_all_changed_descs: list[ts.Node] = []
+    num_changed = 0
+    while sibling_exists:
+        child_node = cursor.node
+        assert child_node is not None
+        if _accumulate_changed_nodes(cursor, acc, skip_ranges):
             num_changed += 1
-            changed_siblings.append(cursor.node)  # type: ignore
-        while cursor.goto_next_sibling():
-            if _accumulate_changed_nodes(cursor, acc):
-                num_changed += 1
-                changed_siblings.append(cursor.node)  # type: ignore
-            else:
-                if len(changed_siblings) > 0:
-                    all_changed_children.append(changed_siblings)
-                changed_siblings = []
-        if len(changed_siblings) > 0:
-            all_changed_children.append(changed_siblings)
+            siblings_with_all_changed_descs.append(child_node)
+        else:
+            if len(siblings_with_all_changed_descs) > 0:
+                siblings_with_all_changed_descs_acc.append(
+                    siblings_with_all_changed_descs
+                )
+            siblings_with_all_changed_descs = []
+        sibling_exists = cursor.goto_next_sibling()
+    if parent_has_children:
+        if len(siblings_with_all_changed_descs) > 0:
+            siblings_with_all_changed_descs_acc.append(siblings_with_all_changed_descs)
         cursor.goto_parent()
-        if num_changed != cursor.node.child_count:  # type: ignore
-            if len(all_changed_children) != 0:
-                acc.extend(all_changed_children)
+        if num_changed != parent_node.child_count:
+            if len(siblings_with_all_changed_descs_acc) != 0:
+                acc.extend(siblings_with_all_changed_descs_acc)
             return False
     return True
 
 
-def find_changed_nodes(tree: ts.Tree) -> list[list[ts.Node]]:
-    """Walk edited tree to find nodes that have been changed via edit.
+def find_changed_nodes(
+    tree: ts.Tree, known_changed_ranges: Optional[list[tuple[int, int]]] = None
+) -> list[list[ts.Node]]:
+    """Walk edited tree to find sequences of sibling nodes have been changed via edit.
 
     A node is considered changed if all of it's descendants have changes."""
     largest_changed_nodes: list[list[ts.Node]] = []
     cursor = tree.walk()
-    source_changed = _accumulate_changed_nodes(cursor, largest_changed_nodes)
+    source_changed = _accumulate_changed_nodes(
+        cursor, largest_changed_nodes, known_changed_ranges
+    )
     if source_changed:
         return [[tree.root_node]]
-    if len(largest_changed_nodes) == 0:
-        return largest_changed_nodes
-    largest_changed_nodes.sort(key=lambda l: l[0].start_byte)
-    final_changed_nodes = [largest_changed_nodes[0]]
-    for node_list, next_node_list in zip(
-        largest_changed_nodes, largest_changed_nodes[1:]
-    ):
-        if node_list[-1].end_byte == next_node_list[0].start_byte:
-            final_changed_nodes[-1].extend(next_node_list)
-        else:
-            final_changed_nodes.append(next_node_list)
-    return final_changed_nodes
+    return largest_changed_nodes
 
 
 def get_largest_ancestor_with_same_range(node: ts.Node) -> ts.Node:
@@ -238,18 +254,20 @@ def get_largest_ancestor_with_same_range(node: ts.Node) -> ts.Node:
     return node
 
 
-def get_cover(ancestor_node: ts.Node, start: int, end: int) -> list[ts.Node]:
-    """Get list of sibling nodes that that are ancestors of
-    anscestor_node that cover the input byte range."""
-    smallest_span_node = ancestor_node.descendant_for_byte_range(start, end)
+def get_cover(ancestor_node: ts.Node, range_start: int, range_end: int) -> list[ts.Node]:
+    """Get list of the smallest sibling nodes that that are descendants of
+    anscestor_node and cover the input byte range."""
+    smallest_span_node = ancestor_node.descendant_for_byte_range(range_start, range_end)
     if smallest_span_node is None:  # nocoverage
         raise ValueError(
-            f"Expected to find node at byte range {start}, {end}" " ; found none."
+            f"Expected to find node at byte range {range_start}, {range_end}"
+            " ; found none."
         )
     # walk up tree, as in case there are adjacent zero length nodes,
     # we also want to catch these
     if (
-        smallest_span_node.start_byte == start and smallest_span_node.end_byte == end
+        smallest_span_node.start_byte == range_start
+        and smallest_span_node.end_byte == range_end
     ) or smallest_span_node.child_count == 0:
         smallest_span_node = get_largest_ancestor_with_same_range(smallest_span_node)
         smallest_span_node = (
@@ -257,11 +275,11 @@ def get_cover(ancestor_node: ts.Node, start: int, end: int) -> list[ts.Node]:
             if smallest_span_node.parent is None
             else smallest_span_node.parent
         )
-    # collect children that intersect the byte range
     cover = [
         child
         for child in smallest_span_node.children
-        if start < child.end_byte and child.start_byte < end
+        # collect children that intersect the byte range
+        if (range_start < child.end_byte and child.start_byte < range_end)
     ]
     return cover
 
@@ -283,46 +301,65 @@ def get_tree_changes(old_tree: ts.Tree, new_tree: ts.Tree) -> list[Change]:
     new tree.
 
     """
-    covers: list[tuple[list[ts.Node], list[ts.Node]]] = []
-    changed_nodes = find_changed_nodes(old_tree)
-    changed_nodes.sort(key=lambda n: n[-1].end_byte - n[0].start_byte, reverse=True)
-    for siblings in changed_nodes:
-        start, end = siblings[0].start_byte, siblings[-1].end_byte
+    changes: list[Change] = []
+    changed_ranges = old_tree.changed_ranges(new_tree)
+    covered_old_ranges: list[tuple[int, int]] = []
+    for r in changed_ranges:
+        start, end = r.start_byte, r.end_byte
+        old_cover = get_cover(old_tree.root_node, start, end)
+        new_cover = get_cover(
+            new_tree.root_node, old_cover[0].start_byte, old_cover[-1].end_byte
+        )
+        old_cover = get_cover(
+            old_tree.root_node, new_cover[0].start_byte, new_cover[-1].end_byte
+        )
+        covered_old_ranges.append((old_cover[0].start_byte, old_cover[-1].end_byte))
+        change = (old_cover, new_cover)
+        if change not in changes:
+            changes.append(change)
+    # add additional changes based on walking the old tree and checkin
+    # if nodes have changes. This detects some edge cases that the
+    # changed_ranges method fails to detect.
+    has_change_siblings = find_changed_nodes(
+        old_tree, known_changed_ranges=covered_old_ranges
+    )
+    for s in has_change_siblings:
+        start, end = s[0].start_byte, s[-1].end_byte
         new_cover = get_cover(new_tree.root_node, start, end)
         if len(new_cover) > 0:
-            new_start, new_end = new_cover[0].start_byte, new_cover[-1].end_byte
-            old_cover = get_cover(old_tree.root_node, new_start, new_end)
-        # for deletions and some weird cases when the ranges shrink,
-        # we just keep the list of sibling changed nodes as well
-        if (
-            len(new_cover) == 0
-            or start < new_cover[0].start_byte
-            or new_cover[-1].end_byte < end
-        ):
-            old_cover = siblings
-        covers.append((old_cover, new_cover))
-    if len(covers) == 0:
-        return covers
-    covers.sort(
+            s = get_cover(
+                old_tree.root_node, new_cover[0].start_byte, new_cover[-1].end_byte
+            )
+        change = (s, new_cover)
+        if change not in changes:
+            changes.append(change)
+    if len(changes) == 0:
+        return changes
+
+    changes.sort(
         key=lambda t: t[0][0].start_byte if len(t[1]) == 0 else t[1][0].start_byte
     )
-    final: list[tuple[list[ts.Node], list[ts.Node]]] = [covers[0]]
+    # we do a final pass to merge adjacent and overlapping changes
+    final: list[tuple[list[ts.Node], list[ts.Node]]] = [changes[0]]
     for (old_cover, new_cover), (next_old_cover, next_new_cover) in zip(
-        covers, covers[1:]
+        changes, changes[1:]
     ):
-        # case: covers are adjacent
-        if new_cover[-1].next_sibling == next_new_cover[0]:
-            assert old_cover[-1].next_sibling == next_old_cover[0]
-            final[-1][0].extend(next_old_cover)
-            final[-1][1].extend(next_new_cover)
-        # case: covers overlap
-        elif new_cover[-1].end_byte > next_new_cover[0].start_byte:
-            assert old_cover[-1].end_byte > next_old_cover[0].start_byte
-            new_idx = new_cover.index(next_new_cover[0])
-            old_idx = old_cover.index(next_old_cover[0])
-            final_old = final[-1][0][:old_idx] + next_old_cover
-            final_new = final[-1][1][:new_idx] + next_new_cover
-            final[-1] = (final_old, final_new)
+        if len(new_cover) > 0 and len(next_new_cover) > 0:
+            # case: covers are adjacent
+            if new_cover[-1].next_sibling == next_new_cover[0]:
+                # assert old_cover[-1].next_sibling == next_old_cover[0]
+                final[-1][0].extend(next_old_cover)
+                final[-1][1].extend(next_new_cover)
+            # case: covers overlap
+            elif new_cover[-1].end_byte > next_new_cover[0].start_byte:
+                # assert old_cover[-1].end_byte > next_old_cover[0].start_byte
+                new_idx = new_cover.index(next_new_cover[0])
+                old_idx = old_cover.index(next_old_cover[0])
+                final_old = final[-1][0][:old_idx] + next_old_cover
+                final_new = final[-1][1][:new_idx] + next_new_cover
+                final[-1] = (final_old, final_new)
+            else:
+                final.append((next_old_cover, next_new_cover))
         else:
             final.append((next_old_cover, next_new_cover))
     return final

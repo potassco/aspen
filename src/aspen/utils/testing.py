@@ -7,8 +7,6 @@ from typing import Literal, Optional, Sequence
 
 from clingo.control import Control
 from clingo.solving import Model
-
-# pylint: disable=import-error,no-name-in-module
 from clingo.symbol import Function, Number, Symbol, parse_term
 from tree_sitter import Language
 
@@ -112,9 +110,10 @@ class AspenTestCase(TestCaseWithRedirectedLogs):
 
         control.solve(on_model=on_iso_model)
         aspen_tree_logger.setLevel(lvl)
-        expected_return: set[Symbol] = set()
-        expected_return.add(Function("isomorphic", []))
-        self.assertSetEqual(query_return_facts, expected_return)
+        query_return_facts_str = {str(s) for s in query_return_facts}
+        expected_return_facts_str: set[str] = set()
+        expected_return_facts_str.add(str(Function("isomorphic", [])))
+        self.assertSetEqual(query_return_facts_str, expected_return_facts_str)
 
     def assert_transform_logs(
         self,
