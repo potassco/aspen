@@ -8,8 +8,6 @@ from pathlib import Path
 from typing import Generator, List, Literal, Optional, Sequence
 
 import tree_sitter as ts
-
-# pylint: disable=import-error,no-name-in-module
 from clingo.control import Control
 from clingo.solving import Model
 from clingo.symbol import Function, Number, String, Symbol, SymbolType, Tuple_
@@ -104,7 +102,7 @@ class AspenTree:
         self.facts: List[Symbol] = []
         self.next_transform_program: Optional[tuple[str, Sequence[Symbol]]] = None
         self._id_generator = id_counter() if id_generator is None else id_generator
-        self._node_id2source_node: dict[Symbol, tuple[Source, ts.Node]] = {}
+        self._node_id2source_path: dict[Symbol, Symbol] = {}
 
     def _path2py(self, path_symb: Symbol) -> list[int]:
         """Convert path expression from symbolic to list form."""
@@ -381,8 +379,8 @@ class AspenTree:
                     exception_symbols.append(arg)
                 elif arg.match("return", 2) and arg.arguments[0].match("path_of_node", 1):
                     node_id = arg.arguments[0].arguments[0]
-                    self._node_id2source_node[Function("node", [node_id])] = (
-                        self._source_path2py_source_node(arg.arguments[1])
+                    self._node_id2source_path[Function("node", [node_id])] = (
+                        arg.arguments[1]
                     )
         if len(next_transform_symbols) > 1:
             raise ValueError(
@@ -445,7 +443,9 @@ class AspenTree:
             # case when len(symb.arguments) == 3
             else:
                 log_level_symb = symb.arguments[1]
-                source, node = self._node_id2source_node[symb.arguments[0]]
+                source, node = self._source_path2py_source_node(
+                    self._node_id2source_path[symb.arguments[0]]
+                )
                 loc_prefix = self._get_loc_prefix_from_source_node(source, node)
                 text = self._format_str_symb2str(symb.arguments[2])
             if (
@@ -475,7 +475,9 @@ class AspenTree:
                 text = self._format_str_symb2str(symb.arguments[0])
             # case when len(symb.arguments) == 2
             else:
-                source, node = self._node_id2source_node[symb.arguments[0]]
+                source, node = self._source_path2py_source_node(
+                    self._node_id2source_path[symb.arguments[0]]
+                )
                 loc_prefix = self._get_loc_prefix_from_source_node(source, node)
                 text = self._format_str_symb2str(symb.arguments[1])
             error_msgs.append(f"{loc_prefix}{text}")
@@ -489,7 +491,9 @@ class AspenTree:
             py_str = symb.string
         elif symb.match("node", 1):
             try:
-                source, node = self._node_id2source_node[symb]
+                source, node = self._source_path2py_source_node(
+                    self._node_id2source_path[symb]
+                )
                 start, end = node.start_byte, node.end_byte
                 py_str = source.source_bytes[start:end].decode(source.encoding)
             # if the tuple is not a node id
@@ -574,7 +578,9 @@ class AspenTree:
         for symb in edit_symbols:
             logger.info("Processing edit symbol: %s.", symb)
             replacement = symb.arguments[1]
-            target_source, target_node = self._node_id2source_node[symb.arguments[0]]
+            target_source, target_node = self._source_path2py_source_node(
+                self._node_id2source_path[symb.arguments[0]]
+            )
             replacement_text = self._format_str_symb2str(replacement)
             logger.debug(
                 "Formatted replacement text of of edit symbol: '%s'", replacement_text
@@ -626,6 +632,39 @@ class AspenTree:
             source_changes[source_symb] = changes
         self._re_reify_changed_subtrees(source_changes)
 
+    def _log_change(self, change: Change) -> None:  # nocoverage
+        """Log change."""
+        old_range: tuple[Optional[ts.Point], Optional[ts.Point]]
+        new_range: tuple[Optional[ts.Point], Optional[ts.Point]]
+        old_siblings, new_siblings = change
+        if len(old_siblings) > 0:
+            old_range = (
+                old_siblings[0].start_point,
+                old_siblings[-1].end_point,
+            )
+        else:
+            old_range = (None, None)
+        if len(new_siblings) > 0:
+            new_range = (
+                new_siblings[0].start_point,
+                new_siblings[-1].end_point,
+            )
+        else:
+            new_range = (None, None)
+        logger.debug(
+            (
+                "Processing change of siblings %s in old tree that changed "
+                "into siblings %s in new tree, spanning range: %s, %s in "
+                "old tree and %s, %s in new tree."
+            ),
+            old_siblings,
+            new_siblings,
+            old_range[0],
+            old_range[1],
+            new_range[0],
+            new_range[1],
+        )
+
     def _re_reify_changed_subtrees(
         self,
         source_changes: dict[Symbol, list[Change]],
@@ -633,22 +672,19 @@ class AspenTree:
         """Re-reify subtrees who's syntactic structure changed due to
         edit, and delete outdated facts from before edit."""
 
-        query2siblings: dict[Symbol, list[ts.Node]] = {}
+        query2new_siblings: dict[Symbol, list[ts.Node]] = {}
         new_facts: list[Symbol] = []
         for source_symb, changes in source_changes.items():
             for change in changes:
                 old_siblings, new_siblings = change
-                logger.debug(
-                    "Processing change in old tree at range: %s, %s",
-                    old_siblings[0].start_point,
-                    old_siblings[-1].end_point,
-                )
+                if logger.isEnabledFor(logging.DEBUG):  # nocoverage
+                    self._log_change(change)
                 first_old_sib_path = self._py_node2path_symb(old_siblings[0])
                 query = Function(
                     "re_reify_siblings",
                     [source_symb, first_old_sib_path, Number(len(old_siblings))],
                 )
-                query2siblings[query] = new_siblings
+                query2new_siblings[query] = new_siblings
         control = Control(logger=clingo_logger)
         parts = [base_program]
         encodings = [
@@ -658,7 +694,7 @@ class AspenTree:
         for encoding in encodings:
             control.load(str(encoding))
         with control.backend() as backend:
-            for query in query2siblings:
+            for query in query2new_siblings:
                 query = Function("aspen", [Function("query", [query])])
                 atom = backend.add_atom(query)
                 backend.add_rule([atom])
@@ -702,10 +738,10 @@ class AspenTree:
             return False
 
         control.solve(on_model=_on_re_reify_model)
-        for query, siblings in query2siblings.items():
+        for query, siblings in query2new_siblings.items():
             kwargs = query2_related_dict[query]
             logger.debug(
-                "Processing query %s with siblings %s and args %s",
+                "Processing query %s with new siblings %s and args %s",
                 query,
                 siblings,
                 kwargs,
@@ -717,11 +753,11 @@ class AspenTree:
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(
                 "Deleting following obsolete facts before adding new facts: %s",
-                " ".join([str(s) for s in delete_facts]),
+                " ".join([str(s) + "." for s in delete_facts]),
             )
             logger.debug(
                 "Adding following new facts from re-reification(s): %s",
-                " ".join([str(s) for s in new_facts]),
+                " ".join([str(s) + "." for s in new_facts]),
             )
         self.facts = [f for f in self.facts if f not in delete_facts]
         self.facts.extend(new_facts)

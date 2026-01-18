@@ -1,13 +1,10 @@
 """Unit tests for utilities."""
 
-import logging
-import sys
 from typing import Optional
 
-import tree_sitter_clingo as ts_clingo
 from tree_sitter import Language, Node, Parser, Point, Tree
 
-from aspen.utils.logging import TestCaseWithRedirectedLogs, configure_logging
+from aspen.utils.logging import TestCaseWithRedirectedLogs
 from aspen.utils.tree_sitter_utils import (
     Change,
     EditRange,
@@ -18,9 +15,7 @@ from aspen.utils.tree_sitter_utils import (
     get_tree_changes,
 )
 
-clingo_lang = Language(ts_clingo.language())
-
-configure_logging(sys.stderr, logging.DEBUG, sys.stderr.isatty())
+from .common import clingo_lang
 
 Path = list[int]
 Length = int
@@ -289,6 +284,15 @@ class TestTreeSitterUtils(TestCaseWithRedirectedLogs):
         )
 
     def test_changes_node_edit3(self) -> None:
+        """Test that editing node results in expected changes."""
+        self.assert_edits_changes_equal(
+            input_bytes=b"aast :- bdsrr. z :- x. a. b.",
+            edits=[([1], "edit", b""), ([3], "edit", b"")],
+            expected_final_bytes=b"aast :- bdsrr.  a. ",
+            expected_change_descriptors=[(([1], 1), None), (([3], 1), None)],
+        )
+
+    def test_changes_node_edit4(self) -> None:
         """Test that editing node results in expected changes."""
         self.assert_edits_changes_equal(
             input_bytes=b"a.",

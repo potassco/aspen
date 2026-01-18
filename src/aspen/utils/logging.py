@@ -13,8 +13,6 @@ from typing import Callable, Optional, TextIO
 from unittest import TestCase
 
 import tree_sitter as ts
-
-# pylint: disable=import-error,no-name-in-module
 from clingo.core import MessageCode
 
 COLORS = {
