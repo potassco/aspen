@@ -4,11 +4,13 @@ import logging
 from collections import defaultdict
 from dataclasses import dataclass
 from graphlib import CycleError, TopologicalSorter
+from io import TextIOBase
 from pathlib import Path
 from typing import Generator, List, Literal, Optional, Sequence
 
 import tree_sitter as ts
 from clingo.control import Control
+from clingo.script import enable_python
 from clingo.solving import Model
 from clingo.symbol import Function, Number, String, Symbol, SymbolType, Tuple_
 
@@ -16,11 +18,14 @@ import aspen
 from aspen.utils.logging import get_clingo_logger, get_logger, get_ts_logger
 from aspen.utils.tree_sitter_utils import (
     Change,
+    calc_edit_range,
     calc_node_edit_range,
     edit_tree,
     get_path_of_node,
     get_tree_changes,
 )
+
+enable_python()
 
 logger = get_logger(__name__)
 clingo_logger = get_clingo_logger(logger)
@@ -76,7 +81,7 @@ class Source:
     tree: ts.Tree
 
 
-class AspenTree:
+class AspenTree:  # pylint: disable=too-many-instance-attributes
     """A tree that wraps a tree-sitter tree and it's representation as
     a set ASP facts.
 
@@ -95,12 +100,14 @@ class AspenTree:
         default_language: Optional[ts.Language] = None,
         default_encoding: StringEncoding = "utf8",
         id_generator: Optional[Generator[Symbol, None, None]] = None,
+        textio_symbols: Optional[dict[Symbol, TextIOBase]] = None,
     ):
         self.sources: dict[Symbol, Source] = {}
         self.default_language = default_language
         self.default_encoding = default_encoding
         self.facts: List[Symbol] = []
         self.next_transform_program: Optional[tuple[str, Sequence[Symbol]]] = None
+        self.textio_symbols = {} if textio_symbols is None else textio_symbols
         self._id_generator = id_counter() if id_generator is None else id_generator
         self._node_id2source_path: dict[Symbol, Symbol] = {}
 
@@ -234,7 +241,7 @@ class AspenTree:
             facts.append(Function("missing", [node_id]))
         if node.is_extra:  # nocoverage
             facts.append(Function("extra", [node_id]))
-        if node.child_count == 0 and node.text is not None:
+        if node.child_count == 0 and node.text is not None and node.parent is not None:
             facts.append(
                 Function(
                     "leaf_text",
@@ -262,7 +269,9 @@ class AspenTree:
                 child_id = next(self._id_generator)
                 if idx != 0:
                     facts.append(
-                        Function("next_sibling", [prev_child_id, child_id])  # type:ignore
+                        Function(
+                            "next_sibling", [prev_child_id, child_id]  # type: ignore
+                        )
                     )
                 facts.append(Function("child", [parent_id, child_id]))
                 field_name = parent.field_name_for_child(idx)
@@ -294,8 +303,8 @@ class AspenTree:
         root_id = tree_facts[0].arguments[0]
         facts.append(Function("source_root", [source.id, root_id]))
         facts.extend(tree_facts)
-        if logger.isEnabledFor(logging.INFO):
-            logger.info(
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
                 "Resulting facts from reifying source %s: %s",
                 source.id,
                 " ".join([str(s) + "." for s in facts]),
@@ -351,11 +360,13 @@ class AspenTree:
             self.next_transform_program = None
             control.solve(on_model=self._on_transform_model)
 
-    def _on_transform_model(self, model: Model) -> Literal[False]:
+    def _on_transform_model(  # pylint: disable=too-many-branches
+        self, model: Model
+    ) -> Literal[False]:
         """Model callback for transformation. Returns False as we only
         expect one model."""
-        if logger.isEnabledFor(logging.INFO):  # nocoverage
-            logger.info(
+        if logger.isEnabledFor(logging.DEBUG):  # nocoverage
+            logger.debug(
                 ("Found stable model with shown atoms: %s"),
                 " ".join([str(s) + "." for s in model.symbols(shown=True)]),
             )
@@ -363,6 +374,7 @@ class AspenTree:
         next_transform_symbols: list[Symbol] = []
         deps: defaultdict[Symbol, list[Symbol]] = defaultdict(list)
         log_symbols: list[Symbol] = []
+        print_symbols: list[Symbol] = []
         exception_symbols: list[Symbol] = []
         for symb in model.symbols(shown=True):
             if symb.match("aspen", 1):
@@ -375,6 +387,8 @@ class AspenTree:
                     next_transform_symbols.append(arg)
                 elif arg.match("log", 3) or arg.match("log", 2):
                     log_symbols.append(arg)
+                elif arg.match("print", 1) or arg.match("print", 2):
+                    print_symbols.append(arg)
                 elif arg.match("exception", 2) or arg.match("exception", 1):
                     exception_symbols.append(arg)
                 elif arg.match("return", 2) and arg.arguments[0].match("path_of_node", 1):
@@ -409,9 +423,10 @@ class AspenTree:
             )
             self.next_transform_program = (prog_name, prog_params)
         self._process_log_symbs(log_symbols)
+        edited_sources = self._process_print_symbs(print_symbols)
         self._process_exception_symbs(exception_symbols)
         sorted_edit_symbols = self._topological_sort_edits(edit_symbols, deps)
-        edited_sources = self._edit_sources_from_symbs(sorted_edit_symbols)
+        edited_sources.update(self._edit_sources_from_symbs(sorted_edit_symbols))
         self._reparse_sources(edited_sources)
         return False
 
@@ -426,9 +441,9 @@ class AspenTree:
             source_str = str(source.id)
         start_p, end_p = node.start_point, node.end_point
         if start_p.row == end_p.row:
-            span_str = f"{start_p.row}:{start_p.column}-{end_p.column}"
+            span_str = f"{start_p.row + 1}:{start_p.column}-{end_p.column}"
         else:
-            span_str = f"{start_p.row}:{start_p.column}-{end_p.row}:{end_p.column}"
+            span_str = f"{start_p.row + 1}:{start_p.column}-{end_p.row}:{end_p.column}"
         loc_prefix = f"{source_str}:{span_str}: "
         return loc_prefix
 
@@ -464,6 +479,57 @@ class AspenTree:
                 "Log level and text of symbol after processing: %s, %s", log_lvl, log_msg
             )
             logger.log(log_lvl, log_msg)
+
+    def _process_print_symbs(self, print_symbols: list[Symbol]) -> set[Symbol]:
+        """Print based on print symbols."""
+        source_edits: dict[Symbol, bytes] = {}
+        for symb in print_symbols:
+            logger.info("Processing print symbol %s.", symb)
+            text = self._format_str_symb2str(symb.arguments[0])
+            if symb.match("print", 1):
+                print(text)
+            # case: arity is 2
+            else:
+                textio_symb = symb.arguments[1]
+                try:
+                    source = self.sources[textio_symb]
+                    encoding = source.encoding
+                    print_bytes = text.encode(encoding=encoding)
+                    if textio_symb not in source_edits:
+                        source_edits[textio_symb] = b""
+                    source_edits[textio_symb] += print_bytes + "\n".encode(encoding)
+                except KeyError:
+                    try:
+                        textio = self.textio_symbols[textio_symb]
+                        print(text, file=textio)
+                    except KeyError as e:  # nocoverage
+                        msg = (
+                            f"Error processing print symbol {symb}: "
+                            f"second argument {textio_symb} does not "
+                            "correspond to any source or textio symbol "
+                            "associated with AspenTree instance."
+                        )
+                        raise KeyError(msg) from e
+        for source_symb, bytes_to_add in source_edits.items():
+            source = self.sources[source_symb]
+            root = source.tree.root_node
+            end_byte, end_point = root.end_byte, root.end_point
+            edit_range = calc_edit_range(
+                start_byte=end_byte,
+                old_end_byte=end_byte,
+                start_point=end_point,
+                old_end_point=end_point,
+                replacement=bytes_to_add,
+            )
+            logger.info("Source before printing to it: %s", source.source_bytes)
+            source.source_bytes = edit_tree(
+                source.tree,
+                edit_range,
+                bytes_to_add,
+                source.source_bytes,
+            )
+            logger.info("Source after printing to it: %s", source.source_bytes)
+        return set(source_edits.keys())
 
     def _process_exception_symbs(self, exception_symbols: list[Symbol]) -> None:
         """Raise errors based on exception symbols."""
@@ -513,7 +579,7 @@ class AspenTree:
         elif (
             symb.match("join", 2)
             and symb.arguments[0].type == SymbolType.String
-            and symb.arguments[1].match("", 2)
+            and (symb.arguments[1].match("", 2) or symb.arguments[1].match("", 0))
         ):
             join_str = symb.arguments[0].string
             inserts = self._cons_list2py(symb.arguments[1])
@@ -679,11 +745,17 @@ class AspenTree:
                 old_siblings, new_siblings = change
                 if logger.isEnabledFor(logging.DEBUG):  # nocoverage
                     self._log_change(change)
-                first_old_sib_path = self._py_node2path_symb(old_siblings[0])
-                query = Function(
-                    "re_reify_siblings",
-                    [source_symb, first_old_sib_path, Number(len(old_siblings))],
-                )
+                if len(old_siblings) > 0:
+                    first_old_sib_path = self._py_node2path_symb(old_siblings[0])
+                    query = Function(
+                        "re_reify_siblings",
+                        [source_symb, first_old_sib_path, Number(len(old_siblings))],
+                    )
+                else:
+                    query = Function(
+                        "re_reify_siblings",
+                        [source_symb, Function("append_to_source", [])],
+                    )
                 query2new_siblings[query] = new_siblings
         control = Control(logger=clingo_logger)
         parts = [base_program]
@@ -706,8 +778,8 @@ class AspenTree:
         query2_related_dict: defaultdict[Symbol, dict[str, Symbol]] = defaultdict(dict)
 
         def _on_re_reify_model(model: Model) -> Literal[False]:
-            if logger.isEnabledFor(logging.INFO):  # nocoverage
-                logger.info(
+            if logger.isEnabledFor(logging.DEBUG):  # nocoverage
+                logger.debug(
                     ("Found stable model with shown atoms: %s"),
                     " ".join([str(s) + "." for s in model.symbols(shown=True)]),
                 )
@@ -720,7 +792,7 @@ class AspenTree:
                 if (
                     symb.match("aspen", 1)
                     and symb.arguments[0].match("return", 2)
-                    and symb.arguments[0].arguments[0].match("re_reify_siblings", 3)
+                    and symb.arguments[0].arguments[0].name == "re_reify_siblings"
                 ):
                     query = symb.arguments[0].arguments[0]
                     ret_value = symb.arguments[0].arguments[1]

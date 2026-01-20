@@ -1,6 +1,14 @@
 #include "../utils/generic/queries/descendant.lp".
 #include "../utils/generic/queries/path_of_node.lp".
 
+#script (python)
+
+from clingo.symbol import Symbol, String
+
+def symbol_to_string(symbol: Symbol) -> String:
+    return String(str(symbol))
+
+#end.
 
 aspen(node_in_fstring(Fstring, Item))
   :- aspen(item_in_fstring(Fstring, Item)), Item=node(N).
@@ -44,6 +52,8 @@ aspen(query(path_of_node(N))) :- aspen(edit(node(N), _)).
 % fstring inserts
 aspen(item_in_fstring(Fstring, Fstring)) :- aspen(log(_, _, Fstring)).
 aspen(item_in_fstring(Fstring, Fstring)) :- aspen(log(_, Fstring)).
+aspen(item_in_fstring(Fstring, Fstring)) :- aspen(print(Fstring)).
+aspen(item_in_fstring(Fstring, Fstring)) :- aspen(print(Fstring, _)).
 
 aspen(item_in_fstring(Fstring, Fstring)) :- aspen(exception(_, Fstring)).
 aspen(item_in_fstring(Fstring, Fstring)) :- aspen(exception(Fstring)).

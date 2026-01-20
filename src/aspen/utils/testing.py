@@ -7,7 +7,7 @@ from typing import Literal, Optional, Sequence
 
 from clingo.control import Control
 from clingo.solving import Model
-from clingo.symbol import Function, Number, Symbol, parse_term
+from clingo.symbol import Function, Symbol, parse_term
 from tree_sitter import Language
 
 from aspen.tree import (
@@ -47,12 +47,12 @@ class AspenTestCase(TestCaseWithRedirectedLogs):
         symbols.sort()
         self.assertListEqual(symbols, expected_symbols)
 
-    def assert_transform_isomorphic(
+    def assert_transform_isomorphic(  # pylint: disable=too-many-locals
         self,
         *,
         language: Language,
-        source: SourceInput,
-        expected: str | Path,
+        sources: Sequence[SourceInput],
+        expected_sources: Sequence[str | Path],
         meta_files: Optional[Sequence[Path]] = None,
         meta_string: Optional[str] = None,
         initial_program: tuple[str, Sequence[Symbol]] = ("base", ()),
@@ -61,40 +61,47 @@ class AspenTestCase(TestCaseWithRedirectedLogs):
         """Assert that transformation results in expected string, and
         check that reified representation is isomorphic."""
         tree = AspenTree(default_language=language)
-        s = tree.parse(source)
-        parsed_source = tree.sources[s]
+        source_symbs = [tree.parse(s) for s in sources]
+        parsed_sources = [tree.sources[s] for s in source_symbs]
         tree.transform(
             meta_files=meta_files,
             meta_string=meta_string,
             initial_program=initial_program,
             control_options=control_options,
         )
-        transformed_source_str = str(
-            tree.sources[s].source_bytes, encoding=parsed_source.encoding
-        )
-        if isinstance(expected, Path):
-            expected = expected.read_text()
-        self.assertEqual(transformed_source_str, expected)
+        transformed_source_strs = [
+            str(s.source_bytes, encoding=s.encoding) for s in parsed_sources
+        ]
+        expected_strs = [
+            s.read_text() if isinstance(s, Path) else s for s in expected_sources
+        ]
+        for source_str, expected_source_str in zip(
+            transformed_source_strs, expected_strs
+        ):
+            self.assertEqual(source_str, expected_source_str)
         # don't clutter logs generated during testing
         lvl = aspen_tree_logger.level
         aspen_tree_logger.setLevel(logging.ERROR)
         tree2 = AspenTree(
             default_language=language, id_generator=id_counter(start=-1, step=-1)
         )
-        tree2.parse(expected)
-        control = Control()
+        expected_source_symbols = [tree2.parse(e) for e in expected_sources]
+        query_symbols = [
+            Function("isomorphic", [s, e])
+            for s, e in zip(source_symbs, expected_source_symbols)
+        ]
+        query_atoms = [Function("aspen", [Function("query", [q])]) for q in query_symbols]
         iso_query_path = generic_util_path / "queries" / "isomorphic.lp"
+        control = Control()
         control.load(str(iso_query_path))
-        query_symb = Function("isomorphic", [Number(0), Number(-1)])
+
         with control.backend() as backend:
             facts = tree.facts + tree2.facts
             for f in facts:
                 f_atom = backend.add_atom(f)
                 backend.add_rule([f_atom])
-            query_atom = backend.add_atom(
-                Function("aspen", [Function("query", [query_symb])])
-            )
-            backend.add_rule([query_atom])
+            for q in query_atoms:
+                backend.add_rule([backend.add_atom(q)])
         control.ground()
         query_return_facts: set[Symbol] = set()
 
@@ -103,7 +110,7 @@ class AspenTestCase(TestCaseWithRedirectedLogs):
                 if (
                     symb.match("aspen", 1)
                     and symb.arguments[0].match("return", 2)
-                    and symb.arguments[0].arguments[0] == query_symb
+                    and symb.arguments[0].arguments[0] in query_symbols
                 ):
                     query_return_facts.add(symb.arguments[0].arguments[1])
             return False
@@ -111,8 +118,7 @@ class AspenTestCase(TestCaseWithRedirectedLogs):
         control.solve(on_model=on_iso_model)
         aspen_tree_logger.setLevel(lvl)
         query_return_facts_str = {str(s) for s in query_return_facts}
-        expected_return_facts_str: set[str] = set()
-        expected_return_facts_str.add(str(Function("isomorphic", [])))
+        expected_return_facts_str: set[str] = set(str(q) for q in query_symbols)
         self.assertSetEqual(query_return_facts_str, expected_return_facts_str)
 
     def assert_transform_logs(
@@ -155,7 +161,7 @@ class AspenTestCase(TestCaseWithRedirectedLogs):
         *,
         message_regex: str,
         language: Language,
-        source: SourceInput,
+        sources: Optional[Sequence[SourceInput]],
         meta_files: Optional[Sequence[Path]] = None,
         meta_string: Optional[str] = None,
         initial_program: tuple[str, Sequence[Symbol]] = ("base", ()),
@@ -163,7 +169,9 @@ class AspenTestCase(TestCaseWithRedirectedLogs):
     ) -> None:
         """Assert that transformation raises error."""
         tree = AspenTree(default_language=language)
-        tree.parse(source)
+        if sources is not None:
+            for s in sources:
+                tree.parse(s)
         with self.assertRaisesRegex(TransformError, message_regex):
             tree.transform(
                 meta_files=meta_files,

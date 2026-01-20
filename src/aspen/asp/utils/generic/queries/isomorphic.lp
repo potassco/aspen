@@ -1,8 +1,22 @@
 #include "../derived_predicates/child_index.lp".
 
+in_source(Root,Source)
+  :- source_root(Source, Root).
+
+in_source(Child, Source)
+  :- in_source(Node, Source),
+		 child(Node, Child).
+
+in_iso_query(Query, Node)
+  :- aspen(query(Query)),
+     Query=isomorphic(Source, Source'),
+		 in_source(Node, (Source;Source')).
+
 aspen(subtree(Query, Root, (), Root; Query, Root', (), Root'))
   :- aspen(query(Query)),
-     Query=isomorphic(Root, Root').
+     Query=isomorphic(Source, Source'),
+		 source_root(Source, Root),
+		 source_root(Source', Root').
 
 aspen(subtree(Query, Root, (Path, Idx), Child))
   :- node(Node),
@@ -12,7 +26,9 @@ aspen(subtree(Query, Root, (Path, Idx), Child))
 
 aspen(iso_query_member(Query, 0, Root; Query, 1, Root'))
   :- aspen(query(Query)),
-     Query=isomorphic(Root, Root').
+     Query=isomorphic(Source, Source'),
+		 source_root(Source, Root),
+		 source_root(Source', Root').
 
 aspen(return(Query, missing_path(Root', Path)))
   :- aspen(iso_query_member(Query, Idx, Root)),
@@ -47,21 +63,27 @@ aspen(return(Query, duplicate_nodes_at_path(Path, Node)))
 aspen(return(Query, dangling_node(Node)))
   :- node(Node),
 		 aspen(iso_query_member(Query, _, _)),
+		 in_iso_query(Query, Node),
 		 not aspen(subtree(Query, _, _, Node)).
 
 aspen(return(Query, dangling_attr(Node, Attr)))
   :- attr(Node, Attr),
 		 aspen(iso_query_member(Query, _, _)),
+		 in_iso_query(Query, Node),
 		 not aspen(subtree(Query, _, _, Node)).
 
 aspen(return(Query, dangling_child(Parent, Child)))
   :- child(Parent, Child),
 		 aspen(iso_query_member(Query, _, _)),
+		 in_iso_query(Query, Parent),
+		 in_iso_query(Query, Child),
 		 #false: aspen(subtree(Query, _, _, Parent)),
              aspen(subtree(Query, _, _, Child)).
 
 aspen(return(Query, dangling_next(Node, NextNode)))
   :- next_sibling(Node, NextNode),
+		 in_iso_query(Query, Node),
+		 in_iso_query(Query, NextNode),
 		 aspen(iso_query_member(Query, _, _)),
 		 #false: aspen(subtree(Query, _, _, Node)),
              aspen(subtree(Query, _, _, NextNode)).
@@ -92,9 +114,9 @@ aspen(return(Query, missing_next_sibling(Path, NextPath)))
 		         aspen(subtree(Query, Root', NextPath, NextNode')),
 						 next_sibling(Node', NextNode').
 
-aspen(return(Query, isomorphic))
+aspen(return(Query, Query))
   :- aspen(query(Query)),
-		 Query=isomorphic(Root, Root'),
+		 Query=isomorphic(Source, Source'),
 		 not aspen(return(Query, missing_attr(_,_))),
 		 not aspen(return(Query, missing_path(_, _))),
 		 not aspen(return(Query, missing_next_sibling(_,_))),
