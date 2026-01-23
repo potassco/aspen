@@ -2,7 +2,7 @@ name: run CI test
 
 on:
   push:
-    branches: [main, master, clingo-5]
+    branches: [main, master, clingo-5, metasp-fixed]
   pull_request:
   workflow_call:
 

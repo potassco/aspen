@@ -9,7 +9,7 @@ description = "aspen is a tool for analyzing and manipulating ASTs in the clingo
 requires-python = ">=3.9"
 dependencies = [
     "clingo",
-    "tree-sitter"
+    "tree-sitter",
 ]
 license = { file = "LICENSE" }
 dynamic = ["version"]
@@ -21,8 +21,8 @@ Homepage = "https://github.com/krr-up/aspen.git/"
 [project.optional-dependencies]
 format = ["black", "isort", "autoflake"]
 lint_pylint = ["pylint", "aspen[test]"]
-typecheck = ["types-setuptools", "mypy", "tree-sitter-clingo"]
-test = ["coverage[toml]", "tree-sitter-clingo"]
+typecheck = ["types-setuptools", "mypy", "tree-sitter-clingo @ git+https://github.com/namcsi/tree-sitter-clingo.git@metasp"]
+test = ["coverage[toml]", "tree-sitter-clingo @ git+https://github.com/namcsi/tree-sitter-clingo.git@metasp"]
 doc = ["mkdocs", "mkdocs-material", "mkdocstrings[python]", "mkdoclingo"]
 lsp = ["python-lsp-server", "rope", "pylsp-mypy", "pylsp-rope", "python-lsp-black"]
 dev = ["aspen[test,typecheck,lint_pylint,lsp]"]
