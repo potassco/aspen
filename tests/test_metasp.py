@@ -42,11 +42,11 @@ class TestMetaAsp(AspenTestCase):
                 initial_program=preprocess_program,
             )
             facts_str = buf.getvalue().strip().replace("&", "__")
-        expected_facts_str = (
-            (output_dir / "generated_telingo_type_facts.lp").read_text().strip()
-        )
-        facts = sorted(facts_str.split("\n"))
-        expected_facts = sorted(expected_facts_str.split("\n"))
+        with open(
+            (output_dir / "generated_telingo_type_facts.lp"), newline="", encoding="utf-8"
+        ) as f:
+            expected_facts = sorted(f.read().splitlines())
+        facts = sorted(facts_str.splitlines())
         self.assertEqual(facts, expected_facts)
 
     def test_metasp_generate_externals(self) -> None:
@@ -63,14 +63,12 @@ class TestMetaAsp(AspenTestCase):
             initial_program=preprocess_program,
         )
         source_text_str = str(source.source_bytes, encoding=source.encoding)
-        source_text = source_text_str.strip().split("\n")
+        source_text = source_text_str.strip().splitlines()
         source_text = [l for l in source_text if l != "" and not l.startswith("%")]
-        expected_externals = (
-            (output_dir / "metasp_telingo_gen_externals.lp")
-            .read_text()
-            .strip()
-            .split("\n")
-        )
+        with open(
+            (output_dir / "metasp_telingo_gen_externals.lp"), newline="", encoding="utf-8"
+        ) as f:
+            expected_externals = sorted(f.read().splitlines())
         expected_externals = [
             l for l in expected_externals if l != "" and not l.startswith("%")
         ]
@@ -95,16 +93,15 @@ class TestMetaAsp(AspenTestCase):
         )
         source_text_str = str(source.source_bytes, encoding=source.encoding).strip()
         code = [
-            l for l in source_text_str.split("\n") if l != "" and not l.startswith("%")
+            l for l in source_text_str.splitlines() if l != "" and not l.startswith("%")
         ]
-        expected_code_str = (
-            (output_dir / "metasp_telingo_with_conditions_gen_externals.lp")
-            .read_text()
-            .strip()
-        )
-        expected_code = [
-            l for l in expected_code_str.split("\n") if l != "" and not l.startswith("%")
-        ]
+        with open(
+            (output_dir / "metasp_telingo_with_conditions_gen_externals.lp"),
+            newline="",
+            encoding="utf-8",
+        ) as f:
+            expected_code = sorted(f.read().splitlines())
+        expected_code = [l for l in expected_code if l != "" and not l.startswith("%")]
         code.sort()
         expected_code.sort()
         self.assertListEqual(code, expected_code)
@@ -158,11 +155,13 @@ class TestMetaAsp(AspenTestCase):
                 meta_string=print_str,
                 initial_program=preprocess_program,
             )
-            print_output = buf.getvalue().strip()
-        expected_facts_str = (
-            (output_dir / "metasp_head_occurrence.lp").read_text().strip()
-        )
-        self.assertEqual(print_output, expected_facts_str)
+            print_output = buf.getvalue()
+        print_facts = print_output.splitlines()
+        with open(
+            (output_dir / "metasp_head_occurrence.lp"), newline="", encoding="utf-8"
+        ) as f:
+            expected_facts = f.read().splitlines()
+        self.assertListEqual(print_facts, expected_facts)
 
     def test_metasp_unknown_symbol(self) -> None:
         """ "Test that exception is raised when an unknown metasp
