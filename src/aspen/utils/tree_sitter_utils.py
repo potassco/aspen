@@ -193,10 +193,10 @@ def _accumulate_changed_nodes(
         # narrow down skip ranges to the ones that intersect the current node
         # we can do this, as non-intersecting ranges also will not intersect
         # any of the current node's children.
-        skip_ranges = [r for r in skip_ranges if r[0] < end and start < r[1]]
         for range_start, range_end in skip_ranges:
             if range_start <= start and end <= range_end:
                 return False
+        skip_ranges = [r for r in skip_ranges if r[0] < end and start < r[1]]
     parent_has_children = cursor.goto_first_child()
     sibling_exists = parent_has_children
     siblings_with_all_changed_descs_acc: list[list[ts.Node]] = []
@@ -287,7 +287,9 @@ def get_cover(ancestor_node: ts.Node, range_start: int, range_end: int) -> list[
 Change = tuple[list[ts.Node], list[ts.Node]]
 
 
-def get_tree_changes(old_tree: ts.Tree, new_tree: ts.Tree) -> list[Change]:
+def get_tree_changes(  # pylint: disable=too-many-branches
+    old_tree: ts.Tree, new_tree: ts.Tree
+) -> list[Change]:
     """Given an old tree, and a new tree that has just been re-parsed
     from the old one, calculate the changes that need to be made to
     old_tree (and data structures derived from old_tree) to get a tree
@@ -307,15 +309,24 @@ def get_tree_changes(old_tree: ts.Tree, new_tree: ts.Tree) -> list[Change]:
     for r in changed_ranges:
         start, end = r.start_byte, r.end_byte
         old_cover = get_cover(old_tree.root_node, start, end)
-        new_cover = get_cover(
-            new_tree.root_node, old_cover[0].start_byte, old_cover[-1].end_byte
-        )
-        old_cover = get_cover(
-            old_tree.root_node, new_cover[0].start_byte, new_cover[-1].end_byte
-        )
-        covered_old_ranges.append((old_cover[0].start_byte, old_cover[-1].end_byte))
-        change = (old_cover, new_cover)
-        if change not in changes:
+        if len(old_cover) > 0:
+            new_cover = get_cover(
+                new_tree.root_node, old_cover[0].start_byte, old_cover[-1].end_byte
+            )
+            old_cover = get_cover(
+                old_tree.root_node, new_cover[0].start_byte, new_cover[-1].end_byte
+            )
+            old_start, old_end = old_cover[0].start_byte, old_cover[-1].end_byte
+        else:
+            new_cover = get_cover(new_tree.root_node, start, end)
+            old_start, old_end = start, end
+        covered = False
+        for cr in covered_old_ranges:
+            if cr[0] <= old_start and old_end <= cr[1]:
+                covered = True
+        if not covered:
+            covered_old_ranges.append((old_start, old_end))
+            change = (old_cover, new_cover)
             changes.append(change)
     # add additional changes based on walking the old tree and checkin
     # if nodes have changes. This detects some edge cases that the

@@ -92,7 +92,7 @@ def log_clingo_message(
     if message_code is MessageCode.AtomUndefined:
         logger.info(CLINGO_FSTRING, message)
     elif message_code is MessageCode.FileIncluded:
-        logger.warn(CLINGO_FSTRING, message)
+        logger.warning(CLINGO_FSTRING, message)
     elif message_code is MessageCode.GlobalVariable:
         logger.info(CLINGO_FSTRING, message)
     elif message_code is MessageCode.OperationUndefined:

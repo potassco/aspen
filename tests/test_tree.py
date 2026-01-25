@@ -1,5 +1,8 @@
 """Unit tests for module aspen.tree"""
 
+from contextlib import redirect_stdout
+from io import StringIO
+
 # pylint: disable=import-error,no-name-in-module
 from clingo.symbol import Function, Number, String, parse_term
 
@@ -123,28 +126,28 @@ class TestAspenTree(AspenTestCase):  # pylint: disable=too-many-public-methods
         """Test transformation, adding variables to atoms."""
         self.assert_transform_isomorphic(
             language=clingo_lang,
-            source="a :- b.",
+            sources=["a :- b."],
             meta_files=[encoding_dir / "add_var.lp"],
             initial_program=("add_var_to_atoms", [String("X")]),
-            expected="a(X) :- b(X).",
+            expected_sources=["a(X) :- b(X)."],
         )
 
     def test_transform_join(self) -> None:
         """Test transformation that uses a string join."""
         self.assert_transform_isomorphic(
             language=clingo_lang,
-            source="a.",
+            sources=["a."],
             meta_files=[encoding_dir / "add_body_to_facts.lp"],
-            expected="a :- b; c.",
+            expected_sources=["a :- b; c."],
         )
 
     def test_transform_join_dependency(self) -> None:
         """Test transformation that uses a string join and dependencies."""
         self.assert_transform_isomorphic(
             language=clingo_lang,
-            source="a. :- b.",
+            sources=["a. :- b."],
             meta_files=[encoding_dir / "add_body_to_facts_depend.lp"],
-            expected="a :- d; c. :- d.",
+            expected_sources=["a :- d; c. :- d."],
         )
 
     def test_transform_multiple_edits_same_node(self) -> None:
@@ -165,9 +168,9 @@ class TestAspenTree(AspenTestCase):  # pylint: disable=too-many-public-methods
         has ancestors that span the same byte range."""
         self.assert_transform_isomorphic(
             language=clingo_lang,
-            source=b"a.",
+            sources=[b"a."],
             meta_string='aspen(edit(node(N),"b")) :- leaf_text(N, "a").',
-            expected="b.",
+            expected_sources=["b."],
         )
 
     def test_transform_bad_edit(self) -> None:
@@ -198,14 +201,14 @@ class TestAspenTree(AspenTestCase):  # pylint: disable=too-many-public-methods
             tree.transform(meta_string=meta_str)
         self.assert_transform_isomorphic(
             language=clingo_lang,
-            source="a(b).",
+            sources=["a(b)."],
             meta_files=[encoding_dir / "add_var.lp"],
             meta_string=(
                 '#program add_var_to_atoms(var). aspen(edit(node(N),"c")) '
                 ':- leaf_text(N,"b").'
             ),
             initial_program=("add_var_to_atoms", [String("X")]),
-            expected="a(c,X).",
+            expected_sources=["a(c,X)."],
         )
 
     def test_transform_multiple_steps(self) -> None:
@@ -213,13 +216,13 @@ class TestAspenTree(AspenTestCase):  # pylint: disable=too-many-public-methods
         steps are defined."""
         self.assert_transform_isomorphic(
             language=clingo_lang,
-            source="a :- b.",
+            sources=["a :- b."],
             meta_files=[
                 encoding_dir / "rename_a_to_b.lp",
                 encoding_dir / "add_var.lp",
             ],
             initial_program=("rename_x_to_y", [String("a"), String("b")]),
-            expected="b(X) :- b(X).",
+            expected_sources=["b(X) :- b(X)."],
         )
 
     def test_transform_bad_next_step(self) -> None:
@@ -245,26 +248,30 @@ class TestAspenTree(AspenTestCase):  # pylint: disable=too-many-public-methods
  leaf_text(N,"a"), type(M,"symbolic_atom"), child(M,L), type(L,"terms")."""
         self.assert_transform_isomorphic(
             language=clingo_lang,
-            source="""
+            sources=[
+                """
 a.
 p(1
 ,
-2).""",
+2)."""
+            ],
             meta_string=meta_str,
-            expected="""
+            expected_sources=[
+                """
 p(1
 ,
 2).
 p(1
 ,
-2).""",
+2)."""
+            ],
         )
 
     def test_transform_logs_info(self) -> None:
         """Test that tranformation logs messages as expected."""
         source_path = encoding_dir / "multiline.lp"
         loc_log_str = str(source_path).replace("\\", "\\\\")
-        loc_log_str += r":0:0-2:0: This is a log for a node"
+        loc_log_str += r":1:0-2:0: This is a log for a node"
         self.assert_transform_logs(
             log_level="INFO",
             message2num_matches={
@@ -280,7 +287,7 @@ p(1
         """Test that tranformation logs messages as expected."""
         source_path = encoding_dir / "a.lp"
         loc_log_str = str(source_path).replace("\\", "\\\\")
-        loc_log_str += r":0:0-2: This is a log for node 'a.'."
+        loc_log_str += r":1:0-2: This is a log for node 'a.'."
         self.assert_transform_logs(
             log_level="WARNING",
             message2num_matches={
@@ -295,9 +302,9 @@ p(1
     def test_transform_raises(self) -> None:
         """Test that transformation raises error as expected."""
         self.assert_transform_raises(
-            message_regex=r"s\(0\):0:0-1: This is an error for node 'a'.",
+            message_regex=r"s\(0\):1:0-1: This is an error for node 'a'.",
             language=clingo_lang,
-            source="a.",
+            sources=["a."],
             meta_files=[encoding_dir / "raise_error.lp"],
         )
 
@@ -306,45 +313,38 @@ p(1
         self.assert_transform_raises(
             message_regex=r"This is an error with no location.",
             language=clingo_lang,
-            source="a.",
+            sources=["a."],
             meta_files=[encoding_dir / "raise_error_no_loc.lp"],
         )
 
-    # def test_transform_metasp_telingo_sugar(self):
-    #     """Integration test for transformation - transform input,
-    #     replacing syntactic sugar."""
-    #     self.assert_transform_isomorphic(
-    #         language=clingo_lang,
-    #         source=(input_dir / "telingo_sugar_input.lp"),
-    #         meta_files=[
-    #             encoding_dir / "replace_sugar.lp",
-    #             input_dir / "telingo_sugar.lp",
-    #         ],
-    #         expected=output_dir / "telingo_sugar_output_intermediate.lp",
-    #     )
+    def test_transform_print(self) -> None:
+        """Test that aspen(print(String)) symbols derived during
+        transformation prints String to stdout."""
+        tree = AspenTree(default_language=clingo_lang)
+        with redirect_stdout(StringIO()) as buf:
+            tree.transform(meta_string='aspen(print(format("Hello {}", ("World", ())))).')
+            printed_text = buf.getvalue()
+            self.assertEqual(printed_text, "Hello World\n")
 
+    def test_transform_print_to_io(self) -> None:
+        """Test that aspen(print(String)) symbols derived during
+        transformation prints String to stdout."""
+        tree = AspenTree(default_language=clingo_lang)
+        with StringIO() as buf:
+            tree.textio_symbols[Function("io", [])] = buf
+            tree.transform(
+                meta_string='aspen(print(format("Hello {}", ("World", ())), io)).'
+            )
+            printed_text = buf.getvalue()
+            self.assertEqual(printed_text, "Hello World\n")
 
-#             language=clingo_lang,
-#             source=(input_dir / "telingo_sugar_input.lp"),
-#             meta_files=[
-#                 encoding_dir / "replace_sugar.lp",
-#                 input_dir / "telingo_sugar.lp",
-#             ],
-#             util_encodings={
-#                 "generic": ("all.lp", "show_all.lp"),
-#                 "clingo": ("symbol_signature.lp", "show_all.lp"),
-#             },
-#             expected=output_dir / "telingo_sugar_output_intermediate.lp",
-#         )
-#             language=clingo_lang,
-#             source=(input_dir / "telingo_sugar_input.lp"),
-#             meta_files=[
-#                 encoding_dir / "replace_sugar.lp",
-#                 input_dir / "telingo_sugar.lp",
-#             ],
-#             util_encodings={
-#                 "generic": ("all.lp", "show_all.lp"),
-#                 "clingo": ("symbol_signature.lp", "show_all.lp"),
-#             },
-#             expected=output_dir / "telingo_sugar_output_intermediate.lp",
-#         )
+    def test_transform_print_to_source(self) -> None:
+        """Test that if Source is a valid source symbol, then
+        aspen(print(String, Source)) symbols derived during
+        transformation append String to the given Source."""
+        self.assert_transform_isomorphic(
+            language=clingo_lang,
+            sources=[""],
+            meta_string='aspen(print("a.", s(0))).',
+            expected_sources=["a.\n"],
+        )

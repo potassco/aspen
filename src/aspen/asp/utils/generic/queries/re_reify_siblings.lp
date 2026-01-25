@@ -1,6 +1,6 @@
 #include "./node_at_path.lp".
 #include "./delete_subtree.lp".
-#include "../derived_predicates/named.lp".
+#include "../derived_predicates/named_child_index.lp".
 
 % find siblings of the given length starting at path
 %%
@@ -44,12 +44,27 @@ aspen(return(Query, parent(ParentId)))
   :- aspen(re_sibling(Query, NodeId, 0, _)),
 	   child(ParentId, NodeId).
 
-% previous (named) sibling of first sibling
+% previous sibling of first sibling
 aspen(return(Query, prev_sibling(PrevNodeId)))
   :- aspen(re_sibling(Query, NodeId, 0, _)),
 		 next_sibling(PrevNodeId, NodeId).
 
-% next (named) sibling of last sibling
+% next sibling of last sibling
 aspen(return(Query, next_sibling(NextNodeId)))
   :- aspen(re_sibling(Query, NodeId, _, 0)),
 		 next_sibling(NodeId, NextNodeId).
+
+
+% second case: just appending to source file, with
+% no changes made to old tree
+
+aspen(return(re_reify_siblings(Source, append_to_source), parent(Root)))
+  :- aspen(query(re_reify_siblings(Source, append_to_source))),
+		 source_root(Source, Root).
+
+aspen(return(re_reify_siblings(Source, append_to_source), prev_sibling(LastSib)))
+  :- aspen(query(re_reify_siblings(Source, append_to_source))),
+		 source_root(Source, Root),
+		 child(Root, LastSib),
+		 named_child_index(LastSib, Idx),
+		 #false: child(Root, Sib), named_child_index(Sib, Idx'), Idx < Idx'.
