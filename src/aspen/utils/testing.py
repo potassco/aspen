@@ -74,12 +74,9 @@ class AspenTestCase(TestCaseWithRedirectedLogs):
             for s in parsed_sources
         ]
         expected_strs: list[str] = []
-        for s in expected_sources:
-            if isinstance(s, Path):
-                with open(s, newline=None, encoding="utf-8") as expfile:
-                    expected_strs.append(expfile.read())
-            else:
-                expected_strs.append(s)
+        expected_strs = [
+            s.read_text() if isinstance(s, Path) else s for s in expected_sources
+        ]
         for source_str, expected_source_str in zip(
             transformed_source_strs, expected_strs
         ):
