@@ -15,7 +15,7 @@ from clingo.solving import Model
 from clingo.symbol import Function, Number, String, Symbol, SymbolType, Tuple_
 
 import aspen
-from aspen.utils.logging import get_clingo_logger, get_logger, get_ts_logger
+from aspen.utils.log import get_clingo_logger, get_logger, get_ts_logger
 from aspen.utils.tree_sitter_utils import (
     Change,
     calc_edit_range,

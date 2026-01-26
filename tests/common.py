@@ -7,7 +7,7 @@ from pathlib import Path
 import tree_sitter_clingo as ts_clingo
 from tree_sitter import Language
 
-from aspen.utils.logging import configure_logging
+from aspen.utils.log import configure_logging
 
 asp_dir = (Path(__file__) / ".." / "asp").resolve()
 encoding_dir = asp_dir / "encodings"

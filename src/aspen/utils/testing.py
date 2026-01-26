@@ -17,7 +17,7 @@ from aspen.tree import (
     generic_util_path,
     id_counter,
 )
-from aspen.utils.logging import TestCaseWithRedirectedLogs
+from aspen.utils.log import TestCaseWithRedirectedLogs
 
 aspen_tree_logger = logging.getLogger("aspen.tree")
 

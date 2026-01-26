@@ -4,7 +4,7 @@ from typing import Optional
 
 from tree_sitter import Language, Node, Parser, Point, Tree
 
-from aspen.utils.logging import TestCaseWithRedirectedLogs
+from aspen.utils.log import TestCaseWithRedirectedLogs
 from aspen.utils.tree_sitter_utils import (
     Change,
     EditRange,

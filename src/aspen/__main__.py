@@ -4,7 +4,7 @@ The main entry point for the application.
 
 import sys
 
-from .utils.logging import configure_logging, get_logger
+from .utils.log import configure_logging, get_logger
 from .utils.parser import get_parser
 
 

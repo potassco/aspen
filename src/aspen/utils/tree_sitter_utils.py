@@ -8,7 +8,7 @@ from typing import Optional
 
 import tree_sitter as ts
 
-from aspen.utils.logging import get_logger
+from aspen.utils.log import get_logger
 
 logger = get_logger(__name__)
 
