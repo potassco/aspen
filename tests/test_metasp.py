@@ -140,9 +140,9 @@ class TestMetaAsp(AspenTestCase):
             )
             print_str = (
                 'aspen(print(format("head({}).", (node(S), ())))) '
-                ':- extended_atom_occurrence(S,"head").'
+                ':- root_symbol_occurrence(S,"head").'
                 'aspen(print(format("directive({}).", (node(S), ())))) '
-                ':- extended_atom_occurrence(S,"directive").'
+                ':- root_symbol_occurrence(S,"directive").'
             )
             tree.parse(input_dir / "metasp_occurrence_head.lp")
             tree.transform(

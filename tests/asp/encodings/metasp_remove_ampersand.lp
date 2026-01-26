@@ -34,9 +34,4 @@ aspen(edit(node(Amp), ""))
   :- ampersand_id(Amp,_).
 
 aspen(edit(node(Id), format("__{}", (node(Id), ()))))
-  :- ampersand_id(_, Id),
-     not no_dunder(Id).
-
-aspen(edit(node(Id), format("{}", (node(Id), ()))))
-  :- ampersand_id(_, Id),
-     no_dunder(Id).
+  :- ampersand_id(_, Id).

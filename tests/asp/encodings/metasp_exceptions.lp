@@ -31,7 +31,7 @@ aspen(exception(node(Type),
 aspen(exception(node(N),
 							  format("Occurence of &{}/{} in forbidden position: {}.",
 											 (Name, (@symbol_to_string(Arity), (Occ, ()))))))
-  :- extended_atom_occurrence(N, Occ),
+  :- root_symbol_occurrence(N, Occ),
 		 symbol_signature(N, (Name, Arity)),
 		 type(N, "metasp_symbolic_atom"),
 		 not metasp_atom_allowed_occurrence(N, Occ),

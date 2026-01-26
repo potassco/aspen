@@ -10,13 +10,6 @@
 
 % some definitions.
 
-
-%% extended_expression_sig(TypeName, ("true", 0), ("true", 0)) :- type_name(_, TypeName).
-%% extended_expression_sig(TypeName, ("false", 0), ("false", 0)) :- type_name(_, TypeName).
-%% extended_expression_sig(TypeName, ("not", 1), ("not", 1)) :- type_name(_, TypeName).
-
-%% extended_arg_kwarg(("not", 1), 0, "safety", "unsafe").
-
 negation(N) :- type(N, ("default_negation"; "double_default_negation")).
 positive(N)
   :- type(N, ("literal"; "body_literal")),
@@ -27,8 +20,8 @@ extended_arg_kwarg(Sig, Idx, Name, Val) :- arg_kwarg(Sig, Idx, Name, Val).
 
 metasp_symbol(N) :- type(N,("metasp_symbolic_atom";"metasp_function")).
 macro_root_symbol((Head;Body)) :- valid_macro(_,Head,Body).
-extended_root_symbol(N) :- type(N, ("metasp_symbolic_atom";"symbolic_atom")).
-extended_root_symbol(N) :- macro_root_symbol(N).
+root_symbol(N) :- type(N, ("metasp_symbolic_atom";"symbolic_atom")).
+root_symbol(N) :- macro_root_symbol(N).
 
 symbol_signature(N,(Name,Arity))
   :- metasp_symbol(N), child(N,M), type(M,"terms"), field(M,"arguments"),
@@ -58,32 +51,34 @@ metasp_operand(N,Idx,O)
 		 child(M,O), named_child_index(O,Idx).
 
 % deterine occurrences of symbols in program.
+% note: we do not count negated literals as head occurences
 
-% possible occurrences
-
-possible_head_occurrence(N)
+root_symbol_occurrence(N, "head")
   :- type(M,"literal"),
+		 positive(M),
 		 field(M,"head"),
 		 child(M,N),
-		 extended_root_symbol(N).
+		 root_symbol(N).
 
-possible_head_occurrence(O)
+root_symbol_occurrence(O, "head")
   :- type(M,"disjunction"),
 		 child(M,N),
 		 type(N,"literal"),
+		 positive(N),
 		 child(N,O),
-		 extended_root_symbol(O).
+		 root_symbol(O).
 
-possible_head_occurrence(P)
+root_symbol_occurrence(P, "head")
   :- type(M, "disjunction"),
 		 child(M,N),
 		 type(N,"conditional_literal"),
 		 child(N,O),
 		 type(O,"literal"),
+		 positive(O),
 		 child(O,P),
-	   extended_root_symbol(P).
+	   root_symbol(P).
 
-possible_head_occurrence(Q)
+root_symbol_occurrence(Q, "head")
   :- type(M, "set_aggregate"),
 		 field(M, "head"),
 		 child(M, N),
@@ -92,10 +87,11 @@ possible_head_occurrence(Q)
 		 type(O, "set_aggregate_element"),
 		 child(O,P),
 		 type(P,"literal"),
+		 positive(P),
 		 child(P,Q),
-		 extended_root_symbol(Q).
+		 root_symbol(Q).
 
-possible_head_occurrence(Q)
+root_symbol_occurrence(Q, "head")
   :- type(M, "head_aggregate"),
 		 child(M, N),
 		 type(N, "head_aggregate_elements"),
@@ -103,36 +99,31 @@ possible_head_occurrence(Q)
 		 type(O, "head_aggregate_element"),
 		 child(O,P),
 		 type(P,"literal"),
+		 positive(P),
 		 child(P,Q),
-		 extended_root_symbol(Q).
+		 root_symbol(Q).
 
-extended_atom_occurrence(N, "directive")
+root_symbol_occurrence(N, "directive")
   :- type(M,"literal"),
 		 positive(M),
 		 field(M, "head"),
 		 child(M,N),
-		 extended_root_symbol(N),
+		 root_symbol(N),
 		 child(L, M),
 		 type(L, "rule"),
 		 #false: child(L, B), type(B, "body").
 
-% we do not count negated literals as head occurences
-extended_atom_occurrence(N, "head")
-  :- possible_head_occurrence(N),
-		 child(Lit, N),
-		 positive(Lit).
+root_symbol_occurrence(M, "macrodef") :- macro_root_symbol(M).
 
-extended_atom_occurrence(M, "macrodef") :- macro_root_symbol(M).
-
-extended_atom_occurrence(M, "body")
-  :- extended_root_symbol(M),
-		 not extended_atom_occurrence(M, "head"),
-		 not extended_atom_occurrence(M, "macrodef").
-
-%% print_symb(extended_atom_occurrence(M, Sig, Occ)) :- extended_atom_occurrence(M, Occ), symbol_signature(M, Sig).
+root_symbol_occurrence(M, "body")
+  :- root_symbol(M),
+		 not root_symbol_occurrence(M, "head"),
+		 not root_symbol_occurrence(M, "macrodef").
 
 
 % determine safety of atom operands.
+
+
 metasp_operand_safety(N,O,Safety)
   :- symbol_signature(N,(Name, Arity)),
 		 metasp_operand(N,Idx,O),
@@ -141,7 +132,7 @@ metasp_operand_safety(N,O,Safety)
 % base cases
 % everything starts out as safe
 root_symbol2operand(Root, Root, "safe")
-  :- extended_root_symbol(Root).
+  :- root_symbol(Root).
 
 % recursion
 root_symbol2operand(Root, Operand, Safety)
@@ -198,8 +189,9 @@ extended_arg_kwarg(Sig, Idx, "safety", "unsafe")
 
 % generate externals
 
+
 safe_occurrence(N)
-  :- extended_atom_occurrence(N, "body"),
+  :- root_symbol_occurrence(N, "body"),
 		 child(O, N),
 		 type(O, "body_literal"),
 		 positive(O).
@@ -224,38 +216,40 @@ metasp_statement_desc(Statement, Node)
   :- metasp_statement(Statement),
 		 statement_desc(Statement, Node).
 
-ext_head(HeadLeaf)
+% The head of an external generated for a head root symbol of the
+% original statement is a leaf operand of the root symbol.
+ext_head(HeadRoot, HeadLeaf)
   :- metasp_statement_desc(Statement, HeadRoot),
-		 extended_atom_occurrence(HeadRoot, "head"),
+		 root_symbol_occurrence(HeadRoot, "head"),
 		 root_symbol2leaf_operand(HeadRoot, HeadLeaf, _).
 
-ext_head(BodyRoot)
+% The head of an external generated for a body metasp symbolic atom of
+% the original statement is the metasp symbolic atom itself
+ext_head(BodyRoot, BodyRoot)
   :- metasp_statement_desc(Statement, BodyRoot),
 		 type(BodyRoot, "metasp_symbolic_atom"),
-		 extended_atom_occurrence(BodyRoot, "body").
+		 root_symbol_occurrence(BodyRoot, "body").
 
-ext_head_source(Head, Source)
-  :- ext_head(Head),
-		 metasp_statement_desc(Statement, Head),
-		 statement(Source, Statement).
-
+% In both cases, the body of the external statement consists of the
+% conjunction of the safe atomic leaf operands occurring in the body
+% of the original statement.
 ext_body(HeadLeaf, BodyLeaf)
   :- metasp_statement_desc(Statement, HeadLeaf),
-		 ext_head(HeadLeaf),
+		 ext_head(_,HeadLeaf),
 		 metasp_statement_desc(Statement, BodyRoot),
 		 safe_occurrence(BodyRoot),
 		 root_symbol2leaf_operand(BodyRoot, BodyLeaf, "safe"),
 		 symbol(BodyLeaf).
 
 % If the operator is part of a condition (as head or body), we need to
-% include the condition as well in the external statement protecting
-% the operator.
+% include the (safe leaf atoms of) condition as well in the body of
+% external statement protecting the operator.
 
 % 1. case: member is head of condition.
 cond_member2cond(E,C)
   :- type(N, "literal"),
 		 child(N,E),
-		 extended_root_symbol(E),
+		 root_symbol(E),
 		 child(P,N),
 		 child(P,C),
 		 type(C, "condition").
@@ -264,15 +258,13 @@ cond_member2cond(E,C)
 cond_member2cond(E,C)
   :- type(N, "literal"),
 		 child(N,E),
-		 extended_root_symbol(E),
+		 root_symbol(E),
 		 child(C,N),
 		 type(C, "condition").
 
-% when ext_head is a head atom of the original statement
 ext_body(Leaf, CondBodyLeaf)
   :- metasp_statement_desc(Statement, Root),
-		 root_symbol2leaf_operand(Root,Leaf,_),
-		 ext_head(Leaf),
+		 ext_head(Root, Leaf),
 		 cond_member2cond(Root, Cond),
 		 child(Cond, Lit),
 		 type(Lit, "literal"),
@@ -280,42 +272,3 @@ ext_body(Leaf, CondBodyLeaf)
 		 child(Lit, CondBodyRoot),
 		 root_symbol2leaf_operand(CondBodyRoot, CondBodyLeaf, "safe"),
 		 symbol(CondBodyLeaf).
-
-% when ext_head is a body expression of the original statement
-ext_body(Root, CondBodyLeaf)
-  :- metasp_statement_desc(Statement, Root),
-		 ext_head(Root),
-		 cond_member2cond(Root, Cond),
-		 child(Cond, Lit),
-		 type(Lit, "literal"),
-		 positive(Lit),
-		 child(Lit, CondBodyRoot),
-		 root_symbol2leaf_operand(CondBodyRoot, CondBodyLeaf, "safe"),
-		 symbol(CondBodyLeaf).
-
-%% aspen(print(format("cond member 2 cond: {}: {}", (node(E), (node(C), ()))))) :- cond_member2cond(E,C).
-%% aspen(print(format("Root symbol 2 root operand: {}: {}, {}",
-%% 									 (node(R), (node(L), (S, ()))))))
-%%   :- root_symbol2leaf_operand(R,L,S).
-
-%% print_symb(Sig) :- ext_head(H), symbol_signature(H, Sig).
-
-
-
-% auxiliary predicates for generation of externals
-
-ext_body_idx(Head, Body, Idx)
-  :- ext_body(Head, Body),
-		 Idx = #count{ B: ext_body(Head, B), B < Body }.
-
-_ext_head_cons(node(Head), (), -1) :- ext_head(Head).
-
-_ext_head_cons(node(Head), (node(Body), Cons), Idx+1)
-  :- _ext_head_cons(node(Head), Cons, Idx),
-		 ext_body_idx(Head, Body, Idx+1).
-
-ext_head_cons(node(Head), Cons)
-  :- _ext_head_cons(node(Head), Cons, Idx),
-		 not ext_body_idx(Head, _, Idx+1).
-
-aspen(print(@symbol_to_string(Symb))) :- print_symb(Symb).
