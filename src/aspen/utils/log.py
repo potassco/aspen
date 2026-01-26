@@ -92,7 +92,8 @@ def log_clingo_message(
     if message_code is MessageCode.AtomUndefined:
         logger.info(CLINGO_FSTRING, message)
     elif message_code is MessageCode.FileIncluded:
-        logger.warning(CLINGO_FSTRING, message)
+        # this error message shows up if we modularize our encodings, so we disable it.
+        pass
     elif message_code is MessageCode.GlobalVariable:
         logger.info(CLINGO_FSTRING, message)
     elif message_code is MessageCode.OperationUndefined:
