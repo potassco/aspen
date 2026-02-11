@@ -118,19 +118,6 @@ class TestMetaAsp(AspenTestCase):
             ],
             initial_program=preprocess_program,
         )
-        self.assert_transform_raises(
-            message_regex=(
-                r"4:6-7: The operand of metasp expression must be a metasp "
-                r"expression or symbolic atoms, found: 1."
-            ),
-            language=clingo_lang,
-            sources=[input_dir / "metasp_bad_syntax.lp", input_dir / "telingo_type.lp"],
-            meta_files=[
-                encoding_dir / "metasp_main.lp",
-                encoding_dir / "metasp_exceptions.lp",
-            ],
-            initial_program=preprocess_program,
-        )
 
     def test_metasp_occurrence(self) -> None:
         """Test that occurrences are detected correctly."""

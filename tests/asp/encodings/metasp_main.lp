@@ -221,6 +221,7 @@ metasp_statement_desc(Statement, Node)
 ext_head(HeadRoot, HeadLeaf)
   :- metasp_statement_desc(Statement, HeadRoot),
 		 root_symbol_occurrence(HeadRoot, "head"),
+		 type(HeadRoot, "metasp_symbolic_atom"),
 		 root_symbol2leaf_operand(HeadRoot, HeadLeaf, _).
 
 % The head of an external generated for a body metasp symbolic atom of

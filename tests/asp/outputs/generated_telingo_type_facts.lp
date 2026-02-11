@@ -29,7 +29,7 @@ var(tel,v2,tel).
 subtype(atom,tel).
 allow(tel,head).
 allow(tel,body).
-macro(__wnext(v1), __or(__next(v1), __final)).
-macro(__eventually(v1), __until(__true, v1)).
-macro(__always(v1), __release(__false, v1)).
-macro(__release(v1, v2), __until(v2, __and(v2, __or(v1, __final)))).
+macro(tel, __wnext(v1), __or(__next(v1), __final)).
+macro(tel, __eventually(v1), __until(__true, v1)).
+macro(tel, __always(v1), __release(__false, v1)).
+macro(tel, __release(v1, v2), __until(v2, __and(v2, __or(v1, __final)))).

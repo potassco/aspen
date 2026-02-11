@@ -1,6 +1,14 @@
 #program metasp_preprocess.
 % some sanity checks
 
+aspen(exception(node(ExpDef),
+							  format("Expected {} argument definitions for expression {}/{}, found {}.",
+											 (ArityStr, (IdName, (ArityStr, (@num_to_string(N), ())))))))
+  :- expression_sig(TypeName, ExpDef, (IdName, Arity)),
+		 N = #count{ Idx: arg_kwarg((IdName, Arity), Idx, _, _ ) },
+		 Arity != N,
+		 @num_to_string(Arity) = ArityStr.
+
 % raise parse errors
 
 aspen(exception(node(Node), "Missing node near point.")) :- missing(Node).
@@ -16,6 +24,8 @@ aspen(exception(node(S), format("Undefined metasp expression &{}/{}.",
 															   (Name, (@symbol_to_string(Arity), ())))))
   :- unknown_metasp_symbol(S),
 		 symbol_signature(S, (Name,Arity)).
+
+% must have the same number of argument definitions as arity
 
 % occurrence must be one of any, head, body, directive
 known_type_occurrence("any";"head";"body";"directive").
@@ -71,12 +81,3 @@ reach_metasp_symbol(M) :- reach_metasp_symbol(N), metasp_operand(N,_,M).
 aspen(exception(node(N),
 							  format("Metasp expression {} is not reachable from metasp symbolic atom through other metasp expressions.", (node(N), ()))))
   :- metasp_symbol(N), not reach_metasp_symbol(N).
-
-% check that the the leafs of metasp expressions are functions, and not arbitrary terms.
-aspen(exception(node(Operand),
-								format("The operand of metasp expression must be a metasp expression or symbolic atoms, found: {}.",
-								(node(Operand), ()))))
-  :- metasp_operand(_,_,Operand),
-		 not metasp_operand(Operand,_,_),
-		 not type(Operand, "function"),
-		 not type(Operand, "metasp_function").
