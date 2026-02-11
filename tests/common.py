@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 import tree_sitter_clingo as ts_clingo
+import tree_sitter_metasp as ts_metasp
 from tree_sitter import Language
 
 from aspen.utils.log import configure_logging
@@ -15,5 +16,6 @@ input_dir = asp_dir / "inputs"
 output_dir = asp_dir / "outputs"
 
 clingo_lang = Language(ts_clingo.language())
+metasp_lang = Language(ts_metasp.language())
 
 configure_logging(sys.stderr, logging.DEBUG, sys.stderr.isatty())

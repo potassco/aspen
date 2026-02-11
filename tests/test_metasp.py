@@ -8,7 +8,7 @@ from clingo import Function
 from aspen.tree import AspenTree
 from aspen.utils.testing import AspenTestCase
 
-from .common import clingo_lang, encoding_dir, input_dir, output_dir
+from .common import encoding_dir, input_dir, metasp_lang, output_dir
 
 remove_amp_program = ("metasp_remove_ampersand", ())
 preprocess_program = ("metasp_preprocess", ())
@@ -22,7 +22,7 @@ class TestMetaAsp(AspenTestCase):
     def test_metasp_remove_ampersand(self) -> None:
         """Test  removal of & from metasp"""
         self.assert_transform_isomorphic(
-            language=clingo_lang,
+            language=metasp_lang,
             sources=[input_dir / "metasp_ids.lp"],
             meta_files=[encoding_dir / "metasp_remove_ampersand.lp"],
             expected_sources=[output_dir / "metasp_ids.lp"],
@@ -33,7 +33,7 @@ class TestMetaAsp(AspenTestCase):
         """Test generation of type facts for metasp"""
         with StringIO() as buf:
             tree = AspenTree(
-                default_language=clingo_lang,
+                default_language=metasp_lang,
             )
             tree.parse(input_dir / "telingo_type.lp")
             tree.textio_symbols[Function("fact_file", [])] = buf
@@ -50,7 +50,7 @@ class TestMetaAsp(AspenTestCase):
 
     def test_metasp_generate_externals(self) -> None:
         """Test generation of external statements for metasp."""
-        tree = AspenTree(default_language=clingo_lang)
+        tree = AspenTree(default_language=metasp_lang)
         tree.parse(input_dir / "telingo_type.lp")
         s = tree.parse(input_dir / "metasp_telingo_gen_externals.lp")
         source = tree.sources[s]
@@ -78,7 +78,7 @@ class TestMetaAsp(AspenTestCase):
         """Test generation of external statements for metasp with more
         advanced language constructs such as aggregates and
         conditional literals."""
-        tree = AspenTree(default_language=clingo_lang)
+        tree = AspenTree(default_language=metasp_lang)
         tree.parse(input_dir / "telingo_type.lp")
         s = tree.parse(input_dir / "metasp_telingo_with_conditions_gen_externals.lp")
         source = tree.sources[s]
@@ -110,7 +110,7 @@ class TestMetaAsp(AspenTestCase):
                 r"2:8-16: Metasp expression &next\(a\) is not reachable from"
                 r" metasp symbolic atom through other metasp expressions."
             ),
-            language=clingo_lang,
+            language=metasp_lang,
             sources=[input_dir / "metasp_bad_syntax.lp", input_dir / "telingo_type.lp"],
             meta_files=[
                 encoding_dir / "metasp_main.lp",
@@ -123,7 +123,7 @@ class TestMetaAsp(AspenTestCase):
         """Test that occurrences are detected correctly."""
         with redirect_stdout(StringIO()) as buf:
             tree = AspenTree(
-                default_language=clingo_lang,
+                default_language=metasp_lang,
             )
             print_str = (
                 'aspen(print(format("head({}).", (node(S), ())))) '
@@ -151,7 +151,7 @@ class TestMetaAsp(AspenTestCase):
         expression is encountered."""
         self.assert_transform_raises(
             message_regex=(r"1:0-2: Undefined metasp expression &a/0."),
-            language=clingo_lang,
+            language=metasp_lang,
             sources=["&a."],
             meta_files=[
                 encoding_dir / "metasp_main.lp",
@@ -164,7 +164,7 @@ class TestMetaAsp(AspenTestCase):
         """ "Test that exception is raised when"""
         self.assert_transform_raises(
             message_regex=(r"8:0-7: Occurence of &bar/1 in forbidden position: head."),
-            language=clingo_lang,
+            language=metasp_lang,
             sources=[input_dir / "metasp_bad_occurrence.lp"],
             meta_files=[
                 encoding_dir / "metasp_main.lp",
@@ -181,7 +181,7 @@ class TestMetaAsp(AspenTestCase):
                 r"3:4-10: One or more arguments of expression definition '&bar/1' "
                 r"does not have provided safety information."
             ),
-            language=clingo_lang,
+            language=metasp_lang,
             sources=[input_dir / "metasp_bad_occurrence.lp"],
             meta_files=[
                 encoding_dir / "metasp_main.lp",
@@ -193,7 +193,7 @@ class TestMetaAsp(AspenTestCase):
     def test_metasp_rewrite_show(self) -> None:
         """Test that rewriting of show statements works as expected."""
         self.assert_transform_isomorphic(
-            language=clingo_lang,
+            language=metasp_lang,
             sources=[input_dir / "metasp_rewrite_show.lp"],
             meta_files=[encoding_dir / "metasp_rewrite_show.lp"],
             expected_sources=[output_dir / "metasp_rewrite_show.lp"],
@@ -203,7 +203,7 @@ class TestMetaAsp(AspenTestCase):
     def test_metasp_integration(self) -> None:
         """Integration test for metasp preprocessing."""
         self.assert_transform_isomorphic(
-            language=clingo_lang,
+            language=metasp_lang,
             sources=[input_dir / "metasp_integration.lp", input_dir / "telingo_type.lp"],
             meta_files=[
                 encoding_dir / "metasp_all.lp",
