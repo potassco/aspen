@@ -10,7 +10,7 @@ from typing import Any, Optional, cast
 
 __all__ = ["get_parser"]
 
-VERSION = metadata.version("aspen")
+VERSION = metadata.version("aspen-tree-5")
 
 
 def get_parser() -> ArgumentParser:

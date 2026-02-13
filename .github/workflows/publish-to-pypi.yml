@@ -1,11 +1,18 @@
 name: Publish Python distribution to PyPI and TestPyPI
 
+env:
+  CLINGO_VERSION: |-
+    ${{ case(
+      startsWith(github.ref_name, 'clingo-5'), 5,
+      6
+    ) }}
+
 on:
   workflow_dispatch:
   push:
     branches:
-      - main
       - clingo-5
+      - main
 
 jobs:
   test:
@@ -48,7 +55,6 @@ jobs:
 
     environment:
       name: pypi
-      url: https://pypi.org/p/aspen-tree
 
     permissions:
       id-token: write  # IMPORTANT: mandatory for trusted publishing
@@ -70,7 +76,6 @@ jobs:
 
     environment:
       name: testpypi
-      url: https://test.pypi.org/p/<package-name>
 
     permissions:
       id-token: write  # IMPORTANT: mandatory for trusted publishing
