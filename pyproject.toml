@@ -3,7 +3,7 @@ requires = ["setuptools", "setuptools-scm"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "aspen"
+name = "aspen-tree"
 authors = [{ name = "Amadé Nemes", email = "nemesamade@gmail.com" }]
 description = "aspen is a tool for analyzing and manipulating ASTs in the clingo ASP language, powered by tree-sitter."
 requires-python = ">=3.9"
@@ -20,12 +20,12 @@ Homepage = "https://github.com/krr-up/aspen.git/"
 
 [project.optional-dependencies]
 format = ["black", "isort", "autoflake"]
-lint_pylint = ["pylint", "aspen[test]"]
-typecheck = ["types-setuptools", "mypy"]
+lint_pylint = ["pylint", "aspen-tree[test]"]
+typecheck = ["types-setuptools", "mypy", "tree-sitter-clingo"]
 test = ["coverage[toml]", "tree-sitter-clingo"]
 doc = ["mkdocs", "mkdocs-material", "mkdocstrings[python]", "mkdoclingo"]
 lsp = ["python-lsp-server", "rope", "pylsp-mypy", "pylsp-rope", "python-lsp-black"]
-dev = ["aspen[test,typecheck,lint_pylint,lsp]"]
+dev = ["aspen-tree[test,typecheck,lint_pylint,lsp]"]
 
 [project.scripts]
 aspen = "aspen.__main__:main"

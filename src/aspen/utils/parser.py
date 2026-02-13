@@ -11,7 +11,7 @@ from . import logging
 
 __all__ = ["get_parser"]
 
-VERSION = metadata.version("aspen")
+VERSION = metadata.version("aspen-tree")
 
 
 def get_parser() -> ArgumentParser:
