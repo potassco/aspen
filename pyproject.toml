@@ -21,8 +21,19 @@ Homepage = "https://github.com/krr-up/aspen.git/"
 [project.optional-dependencies]
 format = ["black", "isort", "autoflake"]
 lint_pylint = ["pylint", "aspen-tree-5[test]"]
-typecheck = ["types-setuptools", "mypy", "tree-sitter-metasp", "tree-sitter-clingo"]
-test = ["coverage[toml]", "tree-sitter-clingo", "tree-sitter-metasp"]
+typecheck = [
+    "types-setuptools",
+    "mypy",
+    "tree-sitter-clingo",
+    "tree-sitter-metasp",
+    "tree-sitter-aspcore2@git+https://github.com/namcsi/tree-sitter-aspcore2.git"
+]
+test = [
+    "coverage[toml]",
+    "tree-sitter-clingo",
+    "tree-sitter-metasp",
+    "tree-sitter-aspcore2@git+https://github.com/namcsi/tree-sitter-aspcore2.git"
+    ]
 doc = ["mkdocs", "mkdocs-material", "mkdocstrings[python]", "mkdoclingo"]
 lsp = ["python-lsp-server", "rope", "pylsp-mypy", "pylsp-rope", "python-lsp-black"]
 dev = ["aspen-tree-5[test,typecheck,lint_pylint,lsp]"]
