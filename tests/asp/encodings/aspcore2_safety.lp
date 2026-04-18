@@ -41,20 +41,18 @@ negated(A) :- atom_set(B, A), next_sibling(N, A), type(N, "naf").
 
 % find variables and deterimine if they are in scope of relevant language constructs
 
-in_scope(S, stm(S)) :- stm(S).
 in_scope(E, eq_expr(E)) :- eq_expr(B, E).
 in_scope(B, binop) :- type(B, "binary_operation").
-in_scope(B, agg_element) :- type(B, "aggregate_element").
 in_scope(A, pos_atom(A)) :- type(A, "classical_atom"), not negated(A).
 in_scope(S, atom_set(S)) :- atom_set(S, _).
-
 in_scope(C, A) :- in_scope(P, A), child(P, C).
 
 % global vs local variables.
 
 context(S, N, "global") :-
   var(V), leaf_text(V, N),
-  stm(S), in_scope(V, atom_set(S)), not in_scope(V, agg_element).
+  stm(S), in_scope(V, atom_set(S)),
+  not in_scope(V, atom_set(E)): atom_set(S, A), agg_element(A, E).
 
 context(E, N, "global") :-
   var(V), leaf_text(V, N),
