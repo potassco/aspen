@@ -12,13 +12,13 @@ agg_eq(A) :-
   child(A, U), type(U, "upper"),
   child(U, R), leaf_text(R, "=").
 
-agg_eq_element(A, E) :-
-  agg_eq(A), child(A, ES),
+agg_element(A, E) :-
+  type(A, "aggregate"), child(A, ES),
   type(ES, "aggregate_elements"), child(ES, E),
   type(E, "aggregate_element").
 
-agg_eq_rhs(A, V) :-
-  agg_eq(A), child(A, U),
+agg_rhs(A, V) :-
+  type(A, "aggregate"), child(A, U),
   type(U, "upper"), child(U, V),
   var(V).
 
@@ -52,11 +52,18 @@ in_scope(C, A) :- in_scope(P, A), child(P, C).
 
 % global vs local variables.
 
-global(S, N) :-
-  var(V), leaf_text(V, N), stm(S), in_scope(V, atom_set(S)), not in_scope(V, agg_element).
+context(S, N, "global") :-
+  var(V), leaf_text(V, N),
+  stm(S), in_scope(V, atom_set(S)), not in_scope(V, agg_element).
 
-local(S, N) :-
-  var(V), leaf_text(V, N), stm(S), in_scope(V, atom_set(S)), not global(S, N).
+context(E, N, "global") :-
+  var(V), leaf_text(V, N),
+  stm(S), context(S, N, "global"),
+  atom_set(S, A), agg_element(A, E),
+  in_scope(V, atom_set(E)).
+
+context(S, N, "local") :-
+  var(V), leaf_text(V, N), in_scope(V, atom_set(S)), not context(S, N, "global").
 
 % define when a set of atoms bind a variable
 
@@ -75,6 +82,9 @@ binds_occur(S, A, V) :-
 % a built-in equality atom in an atom set binds a variable that is
 % the right- or left-hand side of the equation if all variables in the
 % other side of the equation are bound by some other atom in the set.
+
+% Todo: if the equality atom is in an aggregate, we should only need to check variables that are local
+
 bound_by_other(S, A, V) :-
   atom_set(S, A),
   eq_expr(A, E),
@@ -83,23 +93,26 @@ bound_by_other(S, A, V) :-
 
 binds_occur(S, A, V) :-
   atom_set(S, A),
-  eq_expr(A, V), var(V),
+  eq_expr(A, V), var(V), leaf_text(V, N), context(S, N, C),
   eq_expr(A, E), E!=V,
-  bound_by_other(S, A, V'): var(V'), in_scope(V', eq_expr(E)).
+  bound_by_other(S, A, V'): var(V'), leaf_text(V',N'), context(S, N', C),
+  		       	    in_scope(V', eq_expr(E)).
 
 % An equality aggregate atom member of an atom set binds a variable on it's right-hand side
 % if all global variables occurring in the aggregate's elements are bound by some other atom in the atom set
 bound_by_other(S, A, V) :-
-  atom_set(S, A),
-  agg_eq_element(A, E),
-  in_scope(V, atom_set(E)), leaf_text(V, N), global(S, N),
+  atom_set(S, A), agg_eq(A), not negated(A),
+  agg_element(A, E),
+  in_scope(V, atom_set(E)), leaf_text(V, N), context(S, N, "global"),
   binds_occur(S, A', V), A' != A.
 
 binds_occur(S, A, V) :-
-  atom_set(S, A), agg_eq_rhs(A, V),
-  bound_by_other(S, A, V'): agg_eq_element(A, E), var(V'), in_scope(V', atom_set(E)), leaf_text(V', N), global(S, N).
+  atom_set(S, A), agg_eq(A), not negated(A), agg_rhs(A, V),
+  bound_by_other(S, A, V'): agg_element(A, E), var(V'),in_scope(V', atom_set(E)),
+  		       	    leaf_text(V', N), context(S, N, "global").
 
-% todo: nice error message highlighting where the variable is unsafe (maybe also if it is local/global?)
+% todo: nice error message highlighting where the variable is unsafe
+
 % unsafe_set() :- in_scope(S, ).
 % aspen(exception(node(V), format("Variable '{}' is unsafe.", (node(V), ())))) :-
 %   var(V), not binds_occur(_, _, V).
@@ -111,16 +124,15 @@ aspen(exception(node(V), format("Variable '{}' is unsafe.", (node(V), ())))) :-
 % raise syntax errors
 syntax_error(N) :- error(N).
 syntax_error(N) :- missing(N).
-
 aspen(exception(node(N), format("Syntax error at node '{}'.", (node(N), ())))) :- syntax_error(N).
 
-#show negated/1.
-#show in_scope/2.
-#show atom_set/2.
-#show binds_occur/3.
-#show bound_by_other/3.
-#show agg_eq/1.
-#show agg_eq_element/2.
-#show agg_eq_rhs/2.
-#show global/2.
-#show local/2.
+% #show negated/1.
+% #show in_scope/2.
+% #show atom_set/2.
+% #show binds_occur/3.
+% #show bound_by_other/3.
+% #show agg_eq/1.
+% #show agg_element/2.
+% #show agg_rhs/2.
+% #show context/3.
+% #show eq_expr/2.
