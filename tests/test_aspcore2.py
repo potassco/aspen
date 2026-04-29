@@ -105,10 +105,10 @@ class TestMetaAsp(AspenTestCase):
             meta_files=[encoding_dir / "aspcore2_choice_sugar.lp"],
             expected_sources=[
                 (
-                    ":- q(1), not #count{ __choice_neg_p(a) : -p(a), q(3);"
-                    " __choice_p(a) : p(a), q(2) } <= 1.\n"
-                    "-p(a) | __choice_neg_p(a) :- q(1), q(3).\n"
-                    "p(a) | __choice_p(a) :- q(1), q(2)."
+                    ":- q(1), not #count{ __choice_p(a) : p(a), q(2);"
+                    " __choice_neg_p(a) : -p(a), q(3) } <= 1.\n"
+                    "p(a) | __choice_p(a) :- q(1), q(2).\n"
+                    "-p(a) | __choice_neg_p(a) :- q(1), q(3)."
                 )
             ],
         )
