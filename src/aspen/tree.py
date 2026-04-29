@@ -454,7 +454,7 @@ class AspenTree:  # pylint: disable=too-many-instance-attributes
             if len(symb.arguments) == 2:
                 log_level_symb = symb.arguments[0]
                 loc_prefix = " "
-                text = self._format_str_symb2str(symb.arguments[1])
+                text = self._template_symb2str(symb.arguments[1])
             # case when len(symb.arguments) == 3
             else:
                 log_level_symb = symb.arguments[1]
@@ -462,7 +462,7 @@ class AspenTree:  # pylint: disable=too-many-instance-attributes
                     self._node_id2source_path[symb.arguments[0]]
                 )
                 loc_prefix = self._get_loc_prefix_from_source_node(source, node)
-                text = self._format_str_symb2str(symb.arguments[2])
+                text = self._template_symb2str(symb.arguments[2])
             if (
                 log_level_symb.type == SymbolType.String
                 and log_level_symb.string in log_lvl_strs
@@ -485,7 +485,7 @@ class AspenTree:  # pylint: disable=too-many-instance-attributes
         source_edits: dict[Symbol, bytes] = {}
         for symb in print_symbols:
             logger.info("Processing print symbol %s.", symb)
-            text = self._format_str_symb2str(symb.arguments[0])
+            text = self._template_symb2str(symb.arguments[0])
             if symb.match("print", 1):
                 print(text)
             # case: arity is 2
@@ -538,19 +538,19 @@ class AspenTree:  # pylint: disable=too-many-instance-attributes
             logger.debug("Processing exception symbol %s.", symb)
             if len(symb.arguments) == 1:
                 loc_prefix = ""
-                text = self._format_str_symb2str(symb.arguments[0])
+                text = self._template_symb2str(symb.arguments[0])
             # case when len(symb.arguments) == 2
             else:
                 source, node = self._source_path2py_source_node(
                     self._node_id2source_path[symb.arguments[0]]
                 )
                 loc_prefix = self._get_loc_prefix_from_source_node(source, node)
-                text = self._format_str_symb2str(symb.arguments[1])
+                text = self._template_symb2str(symb.arguments[1])
             error_msgs.append(f"{loc_prefix}{text}")
         if len(error_msgs) > 0:
             raise TransformError("\n".join(error_msgs))
 
-    def _format_str_symb2str(self, symb: Symbol) -> str:
+    def _template_symb2str(self, symb: Symbol) -> str:
         """Convert format string symbol to python str."""
         py_str: str
         if symb.type == SymbolType.String:
@@ -574,7 +574,7 @@ class AspenTree:  # pylint: disable=too-many-instance-attributes
         ):
             format_string = symb.arguments[0].string
             inserts = self._cons_list2py(symb.arguments[1])
-            insert_strs: list[str] = [self._format_str_symb2str(s) for s in inserts]
+            insert_strs: list[str] = [self._template_symb2str(s) for s in inserts]
             py_str = format_string.format(*insert_strs)
         elif (
             symb.match("join", 2)
@@ -583,7 +583,7 @@ class AspenTree:  # pylint: disable=too-many-instance-attributes
         ):
             join_str = symb.arguments[0].string
             inserts = self._cons_list2py(symb.arguments[1])
-            insert_strs = [self._format_str_symb2str(s) for s in inserts]
+            insert_strs = [self._template_symb2str(s) for s in inserts]
             py_str = join_str.join(insert_strs)
         else:
             raise ValueError(f"Symbol {symb} could not be converted to string.")
@@ -647,10 +647,8 @@ class AspenTree:  # pylint: disable=too-many-instance-attributes
             target_source, target_node = self._source_path2py_source_node(
                 self._node_id2source_path[symb.arguments[0]]
             )
-            replacement_text = self._format_str_symb2str(replacement)
-            logger.debug(
-                "Formatted replacement text of of edit symbol: '%s'", replacement_text
-            )
+            replacement_text = self._template_symb2str(replacement)
+            logger.debug("Evaluted template of edit symbol: '%s'", replacement_text)
             replacement_bytes = bytes(replacement_text, target_source.encoding)
             if logger.isEnabledFor(logging.INFO):
                 logger.info(
