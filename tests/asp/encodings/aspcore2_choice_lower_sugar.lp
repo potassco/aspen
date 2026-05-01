@@ -22,10 +22,7 @@ aspen(replace(node(R), join("\n", (LT,(UT,()))))) :-
 inverse("<",">";"<=",">=";"=","=";"!=","!=").
 inverse(B,A) :- inverse(A,B).
 
-choice(R,C,L) :- type(R,"rule"), child(R,C), type(C,"choice"),
-  child(C,L), type(L,"lower").
-
-aspen(replace(node(C),format("{{ {0} }} {1} {2}",
-			  (node(ES),(S',(node(T),())))))) :-
-  choice(R,C,L), child(C,ES), type(ES,"choice_elements"), child(L,T),
-  child(L,O), next_sibling(T,O), leaf_text(O,S), inverse(S,S').
+aspen(delete(node(L));
+      append(node(C),format(" {0} {1}",(S',(node(T),()))))) :-
+  type(C,"choice"), child(C,L), type(L,"lower"),
+  child(L,T), child(L,O), next_sibling(T,O), leaf_text(O,S), inverse(S,S').

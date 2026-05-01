@@ -10,6 +10,8 @@ def symbol_to_string(symbol: Symbol) -> String:
 
 #end.
 
+aspen(replace(N,"")) :- aspen(delete(N)).
+
 aspen(node_in_template(Template, Item)) :-
   aspen(item_in_template(Template, Item)), Item=node(N).
 
@@ -24,8 +26,6 @@ aspen(list_in_template(Template, Rest)) :-
 
 aspen(item_in_template(Template, First)) :-
   aspen(list_in_template(Template, (First, Rest))).
-
-
 
 aspen(item_in_template(Template, Template)) :-
   aspen(replace(Node, Template);append(Node, Template)).

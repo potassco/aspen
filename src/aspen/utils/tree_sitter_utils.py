@@ -320,6 +320,13 @@ def get_tree_changes(  # pylint: disable=too-many-branches
         else:
             new_cover = get_cover(new_tree.root_node, start, end)
             old_start, old_end = start, end
+        # Sometimes, when deleting the first node, we get two empty covers.
+        # In this case we do not want to add this change, and insted reply on
+        # walking the old tree and checking for changes.
+        # We exit early in this case to not mark old_start, old_end as covered,
+        # so we don't skip over this region when walking the old tree
+        if (old_cover, new_cover) == ([], []):
+            continue
         covered = False
         for cr in covered_old_ranges:
             if cr[0] <= old_start and old_end <= cr[1]:
@@ -328,7 +335,7 @@ def get_tree_changes(  # pylint: disable=too-many-branches
             covered_old_ranges.append((old_start, old_end))
             change = (old_cover, new_cover)
             changes.append(change)
-    # add additional changes based on walking the old tree and checkin
+    # add additional changes based on walking the old tree and checking
     # if nodes have changes. This detects some edge cases that the
     # changed_ranges method fails to detect.
     has_change_siblings = find_changed_nodes(
@@ -346,7 +353,6 @@ def get_tree_changes(  # pylint: disable=too-many-branches
             changes.append(change)
     if len(changes) == 0:
         return changes
-
     changes.sort(
         key=lambda t: t[0][0].start_byte if len(t[1]) == 0 else t[1][0].start_byte
     )

@@ -120,7 +120,7 @@ class TestMetaAsp(AspenTestCase):
             sources=["1 <= {a;b}."],
             meta_files=[encoding_dir / "aspcore2_choice_lower_sugar.lp"],
             initial_program=("aspcore_choice_rewrite_lower", ()),
-            expected_sources=["{ a;b } >= 1."],
+            expected_sources=[" {a;b} >= 1."],
         )
 
     def test_aspcore2_choice_double_bound_sugar(self) -> None:
@@ -145,5 +145,5 @@ class TestMetaAsp(AspenTestCase):
                 'aspen(next_program("aspcore_choice_rewrite_lower",())).'
             ),
             initial_program=("aspcore_choice_double_bound", ()),
-            expected_sources=["{ a;b } >= 1 :- c.\n{ a;b } < 2 :- c."],
+            expected_sources=[" { a;b } >= 1 :- c.\n{ a;b } < 2 :- c."],
         )

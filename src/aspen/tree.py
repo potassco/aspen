@@ -598,6 +598,7 @@ class AspenTree:  # pylint: disable=too-many-instance-attributes
         target node of any given derived edit fact.
 
         """
+        # TODO: check for duplicate append symbols as well.
         seen = set()
         dupes = {
             f.arguments[0]
@@ -659,6 +660,7 @@ class AspenTree:  # pylint: disable=too-many-instance-attributes
                         target_source.source_bytes, encoding=target_source.encoding
                     ).replace("\n", "\\n"),
                 )
+            # TODO: Implement prepend operator as well
             if symb.match("replace", 2):
                 edit_range = calc_node_edit_range(target_node, insert_bytes)
             elif symb.match("append", 2):
