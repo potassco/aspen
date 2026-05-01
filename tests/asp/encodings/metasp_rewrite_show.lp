@@ -16,11 +16,11 @@ def upper_alphabet_cons(length_str: Symbol) -> Symbol:
 #program metasp_preprocess.
 
 % show
-aspen(edit(node(Show), "_show."))
+aspen(replace(node(Show), "_show."))
   :- type(Show, "show").
 
 % show term
-aspen(edit(node(ShowTerm),
+aspen(replace(node(ShowTerm),
 					 format("_show_term({}) :- {}.",
 									(node(Term), (node(Body), ())))))
   :- type(ShowTerm, "show_term"),
@@ -58,7 +58,7 @@ signature_id_prefix(Sig,"&") :- type(Sig, "metasp_signature").
 arity_var_cons(A, @upper_alphabet_cons(A))
   :- signature_arity(_,A).
 
-aspen(edit(node(ShowSig), format("_show_atom({0}{1}{2}({3})) :- {0}{1}{2}({3}).",
+aspen(replace(node(ShowSig), format("_show_atom({0}{1}{2}({3})) :- {0}{1}{2}({3}).",
 																 (Sign, (Pre, (node(Id), (join(", ", Cons), ())))))))
   :- type(ShowSig, "show_signature"),
 		 child(ShowSig, Sig),

@@ -138,7 +138,7 @@ def calc_node_edit_range(edit_node: ts.Node, replacement: bytes) -> EditRange:
     )
 
 
-def calc_append_range(append_node: ts.Node, to_append: bytes) -> EditRange:
+def calc_node_append_range(append_node: ts.Node, to_append: bytes) -> EditRange:
     """Calculate start/end bytes and points for appending text after node."""
     start_byte = append_node.end_byte
     old_end_byte = append_node.end_byte

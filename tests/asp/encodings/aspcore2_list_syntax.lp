@@ -18,4 +18,4 @@ cons_list(L, I, format("cons({}, {})", (node(Car), (Cdr, ())))) :-
   list(L, I, Car),
   cons_list(L, I+1, Cdr).
 
-aspen(edit(node(L), F)) :- cons_list(L, 0, F).
+aspen(replace(node(L), F)) :- cons_list(L, 0, F).

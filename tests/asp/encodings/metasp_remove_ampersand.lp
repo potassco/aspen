@@ -30,8 +30,8 @@ ampersand_id(Amp, Id)
 		 type(Id, "identifier"),
 		 not exempt(Node).
 
-aspen(edit(node(Amp), ""))
+aspen(replace(node(Amp), ""))
   :- ampersand_id(Amp,_).
 
-aspen(edit(node(Id), format("__{}", (node(Id), ()))))
+aspen(replace(node(Id), format("__{}", (node(Id), ()))))
   :- ampersand_id(_, Id).

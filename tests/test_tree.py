@@ -132,6 +132,16 @@ class TestAspenTree(AspenTestCase):  # pylint: disable=too-many-public-methods
             expected_sources=["a(X) :- b(X)."],
         )
 
+    def test_transform_add_vars_append(self) -> None:
+        """Test transformation, adding variables to atoms, using append."""
+        self.assert_transform_isomorphic(
+            language=clingo_lang,
+            sources=["a :- b."],
+            meta_files=[encoding_dir / "add_var_append.lp"],
+            initial_program=("add_var_to_atoms", [String("X")]),
+            expected_sources=["a(X) :- b(X)."],
+        )
+
     def test_transform_join(self) -> None:
         """Test transformation that uses a string join."""
         self.assert_transform_isomorphic(
@@ -150,12 +160,14 @@ class TestAspenTree(AspenTestCase):  # pylint: disable=too-many-public-methods
             expected_sources=["a :- d; c. :- d."],
         )
 
-    def test_transform_multiple_edits_same_node(self) -> None:
+    def test_transform_multiple_replacess_same_node(self) -> None:
         """Test that transformation raises error when defining
-        multiple edits for the same node."""
+        multiple replacements for the same node."""
         tree = AspenTree(default_language=clingo_lang)
         tree.parse("p(1).")
-        meta_str = 'aspen(edit(node(N),format(S,()))) :- source_root(_,N); S=("a.";"b.").'
+        meta_str = (
+            'aspen(replace(node(N),format(S,()))) :- source_root(_,N); S=("a.";"b.").'
+        )
         regex_str = (
             r"Multiple edits defined for following nodes;"
             r" expected one each: node\(0\)."
@@ -169,16 +181,16 @@ class TestAspenTree(AspenTestCase):  # pylint: disable=too-many-public-methods
         self.assert_transform_isomorphic(
             language=clingo_lang,
             sources=[b"a."],
-            meta_string='aspen(edit(node(N),"b")) :- leaf_text(N, "a").',
+            meta_string='aspen(replace(node(N),"b")) :- leaf_text(N, "a").',
             expected_sources=["b."],
         )
 
-    def test_transform_bad_edit(self) -> None:
+    def test_transform_bad_replace(self) -> None:
         """Test that tranformation raises error when invalid
-        replacement is used in aspen(edit(S,R))."""
+        replacement is used in aspen(replace(S,R))."""
         tree = AspenTree(default_language=clingo_lang)
         tree.parse("p(1).")
-        meta_str = "aspen(edit(node(N),foo(1))) :- source_root(_,N)."
+        meta_str = "aspen(replace(node(N),foo(1))) :- source_root(_,N)."
         regex_str = r"Symbol foo\(1\) could not be converted to string\."
         with self.assertRaisesRegex(ValueError, regex_str):
             tree.transform(meta_string=meta_str)
@@ -189,9 +201,9 @@ class TestAspenTree(AspenTestCase):  # pylint: disable=too-many-public-methods
         tree = AspenTree(default_language=clingo_lang)
         tree.parse("a :- b.")
         meta_str = (
-            'aspen(edit(node(N), format("{0}", (node(M), ()))))'
+            'aspen(replace(node(N), format("{0}", (node(M), ()))))'
             ' :- leaf_text(N, "a"), leaf_text(M, "b").'
-            'aspen(edit(node(M), format("{0}", (node(N), ()))))'
+            'aspen(replace(node(M), format("{0}", (node(N), ()))))'
             ' :- leaf_text(N, "a"), leaf_text(M, "b").'
         )
         error_regex = (
@@ -204,7 +216,7 @@ class TestAspenTree(AspenTestCase):  # pylint: disable=too-many-public-methods
             sources=["a(b)."],
             meta_files=[encoding_dir / "add_var.lp"],
             meta_string=(
-                '#program add_var_to_atoms(var). aspen(edit(node(N),"c")) '
+                '#program add_var_to_atoms(var). aspen(replace(node(N),"c")) '
                 ':- leaf_text(N,"b").'
             ),
             initial_program=("add_var_to_atoms", [String("X")]),
@@ -244,7 +256,7 @@ class TestAspenTree(AspenTestCase):  # pylint: disable=too-many-public-methods
 
     def test_transform_multiline(self) -> None:
         """Test transform where multiline replacement occurs."""
-        meta_str = """aspen(edit(node(N),format("{0}", (node(M),())))) :-
+        meta_str = """aspen(replace(node(N),format("{0}", (node(M),())))) :-
  leaf_text(N,"a"), type(M,"symbolic_atom"), child(M,L), type(L,"terms")."""
         self.assert_transform_isomorphic(
             language=clingo_lang,

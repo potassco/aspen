@@ -15,7 +15,7 @@ templ(lower(R),format("{} {{ {} }}{}.", (node(L),(node(ES),(T,()))))) :-
 templ(upper(R),format("{{ {} }} {}{}.", (node(ES),(node(U),(T,()))))) :-
   choice(R,ES,_,U), templ(body(R),T).
 
-aspen(edit(node(R), join("\n", (LT,(UT,()))))) :-
+aspen(replace(node(R), join("\n", (LT,(UT,()))))) :-
   choice(R,_,_,_), templ(lower(R),LT), templ(upper(R),UT).
 
 #program aspcore_choice_rewrite_lower.
@@ -25,7 +25,7 @@ inverse(B,A) :- inverse(A,B).
 choice(R,C,L) :- type(R,"rule"), child(R,C), type(C,"choice"),
   child(C,L), type(L,"lower").
 
-aspen(edit(node(C),format("{{ {0} }} {1} {2}",
+aspen(replace(node(C),format("{{ {0} }} {1} {2}",
 			  (node(ES),(S',(node(T),())))))) :-
   choice(R,C,L), child(C,ES), type(ES,"choice_elements"), child(L,T),
   child(L,O), next_sibling(T,O), leaf_text(O,S), inverse(S,S').

@@ -8,7 +8,7 @@ from aspen.utils.log import TestCaseWithRedirectedLogs
 from aspen.utils.tree_sitter_utils import (
     Change,
     EditRange,
-    calc_append_range,
+    calc_node_append_range,
     calc_node_edit_range,
     edit_tree,
     get_node_at_path,
@@ -105,7 +105,7 @@ class TestTreeSitterUtils(TestCaseWithRedirectedLogs):
                 if mode == "edit":
                     replace_range = calc_node_edit_range(target_node, replace_bytes)
                 elif mode == "append":
-                    replace_range = calc_append_range(target_node, replace_bytes)
+                    replace_range = calc_node_append_range(target_node, replace_bytes)
                 else:
                     raise ValueError
                 current_bytes = edit_tree(

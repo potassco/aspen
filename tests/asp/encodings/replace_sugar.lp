@@ -82,7 +82,7 @@ replace_text(SugarId, RootId, Path, format("{}({})", (Name, (join(", ", Cons), (
 replace_text_root(SugarId, RootId, Text)
   :- replace_text(SugarId, RootId, (), Text).
 
-aspen(edit(RootId, Text))
+aspen(replace(RootId, Text))
   :- replace_text_root(SugarId, RootId, Text).
 
 % repeat transform again if there was a match, in case syntactic sugar

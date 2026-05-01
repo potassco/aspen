@@ -19,6 +19,7 @@ from aspen.utils.log import get_clingo_logger, get_logger, get_ts_logger
 from aspen.utils.tree_sitter_utils import (
     Change,
     calc_edit_range,
+    calc_node_append_range,
     calc_node_edit_range,
     edit_tree,
     get_path_of_node,
@@ -379,7 +380,7 @@ class AspenTree:  # pylint: disable=too-many-instance-attributes
         for symb in model.symbols(shown=True):
             if symb.match("aspen", 1):
                 arg = symb.arguments[0]
-                if arg.match("edit", 2):
+                if arg.match("replace", 2) or arg.match("append", 2):
                     edit_symbols.append(arg)
                 elif arg.match("comes_before", 2):
                     deps[arg.arguments[1]].append(arg.arguments[0])
@@ -551,7 +552,7 @@ class AspenTree:  # pylint: disable=too-many-instance-attributes
             raise TransformError("\n".join(error_msgs))
 
     def _template_symb2str(self, symb: Symbol) -> str:
-        """Convert format string symbol to python str."""
+        """Convert template symbol to python str."""
         py_str: str
         if symb.type == SymbolType.String:
             py_str = symb.string
@@ -597,6 +598,18 @@ class AspenTree:  # pylint: disable=too-many-instance-attributes
         target node of any given derived edit fact.
 
         """
+        seen = set()
+        dupes = {
+            f.arguments[0]
+            for f in edit_symbols
+            if f.arguments[0] in seen or seen.add(f.arguments[0])  # type: ignore
+        }
+        if len(dupes) > 0:
+            dupes_str = ",".join(str(d) for d in dupes)
+            raise ValueError(
+                "Multiple edits defined for following nodes; "
+                f"expected one each: {dupes_str}."
+            )
         for s in edit_symbols:
             if s not in deps.keys():
                 deps[s] = []
@@ -628,28 +641,16 @@ class AspenTree:  # pylint: disable=too-many-instance-attributes
         _topological_sort_edits.
 
         """
-        seen = set()
-        dupes = {
-            f.arguments[0]
-            for f in edit_symbols
-            if f.arguments[0] in seen or seen.add(f.arguments[0])  # type: ignore
-        }
-        if len(dupes) > 0:
-            dupes_str = ",".join(str(d) for d in dupes)
-            raise ValueError(
-                "Multiple edits defined for following nodes; "
-                f"expected one each: {dupes_str}."
-            )
         edited_sources: set[Symbol] = set()
         for symb in edit_symbols:
             logger.info("Processing edit symbol: %s.", symb)
-            replacement = symb.arguments[1]
+            template_symb = symb.arguments[1]
             target_source, target_node = self._source_path2py_source_node(
                 self._node_id2source_path[symb.arguments[0]]
             )
-            replacement_text = self._template_symb2str(replacement)
-            logger.debug("Evaluted template of edit symbol: '%s'", replacement_text)
-            replacement_bytes = bytes(replacement_text, target_source.encoding)
+            insert_text = self._template_symb2str(template_symb)
+            logger.debug("Evaluted template of edit symbol: '%s'", insert_text)
+            insert_bytes = bytes(insert_text, target_source.encoding)
             if logger.isEnabledFor(logging.INFO):
                 logger.info(
                     "Text of source %s before applying edit: '%s'",
@@ -658,11 +659,16 @@ class AspenTree:  # pylint: disable=too-many-instance-attributes
                         target_source.source_bytes, encoding=target_source.encoding
                     ).replace("\n", "\\n"),
                 )
-            edit_range = calc_node_edit_range(target_node, replacement_bytes)
+            if symb.match("replace", 2):
+                edit_range = calc_node_edit_range(target_node, insert_bytes)
+            elif symb.match("append", 2):
+                edit_range = calc_node_append_range(target_node, insert_bytes)
+            else:
+                raise RuntimeError("Code should be unreachable.")
             target_source.source_bytes = edit_tree(
                 target_source.tree,
                 edit_range,
-                replacement_bytes,
+                insert_bytes,
                 target_source.source_bytes,
             )
             if logger.isEnabledFor(logging.INFO):

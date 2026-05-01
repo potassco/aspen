@@ -45,7 +45,7 @@ templ(constraint(R),
 aspen(query(make_list(rules(R), T, I))) :-
   choice(R,E), named_child_index(E,I), templ(rule(E),T).
 
-aspen(edit(node(R),join("\n",(T, C)))) :-
+aspen(replace(node(R),join("\n",(T, C)))) :-
      choice(R,_), aspen(return(make_list(rules(R)), C)),
      templ(constraint(R),T).
 

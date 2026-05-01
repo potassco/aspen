@@ -10,52 +10,53 @@ def symbol_to_string(symbol: Symbol) -> String:
 
 #end.
 
-aspen(node_in_fstring(Fstring, Item))
-  :- aspen(item_in_fstring(Fstring, Item)), Item=node(N).
+aspen(node_in_template(Template, Item)) :-
+  aspen(item_in_template(Template, Item)), Item=node(N).
 
-aspen(list_in_fstring(Fstring, List))
-  :- aspen(item_in_fstring(Fstring, Item)), Item=join(Sep, List).
+aspen(list_in_template(Template, List)) :-
+  aspen(item_in_template(Template, Item)), Item=join(Sep, List).
 
-aspen(list_in_fstring(Fstring, List))
-  :- aspen(item_in_fstring(Fstring, Item)), Item=format(FormatStr, List).
+aspen(list_in_template(Template, List)) :-
+  aspen(item_in_template(Template, Item)), Item=format(FormatStr, List).
 
-aspen(list_in_fstring(Fstring, Rest)) :- aspen(list_in_fstring(Fstring, (First, Rest))).
+aspen(list_in_template(Template, Rest)) :-
+  aspen(list_in_template(Template, (First, Rest))).
 
-aspen(item_in_fstring(Fstring, First)) :- aspen(list_in_fstring(Fstring, (First, Rest))).
+aspen(item_in_template(Template, First)) :-
+  aspen(list_in_template(Template, (First, Rest))).
 
 
 
-aspen(item_in_fstring(Fstring, Fstring)) :- aspen(edit(Node, Fstring)).
+aspen(item_in_template(Template, Template)) :-
+  aspen(replace(Node, Template);append(Node, Template)).
 
-aspen(query(descendant(N))) :- aspen(edit(_,S)), aspen(node_in_fstring(S,node(N))).
+aspen(query(descendant(N))) :-
+  aspen(replace(_,S);append(_,S)), aspen(node_in_template(S,node(N))).
 
-aspen(target(edit(N,S),N)) :- aspen(edit(N,S)).
+aspen(target(replace(N,S),N)) :- aspen(replace(N,S)).
 
 % aspen(comes_before(Edit',Edit)) means Edit' must occur before Edit
 % for the text replacement to be correct.
-aspen(comes_before(edit(node(TargetNode), S'), edit(N, S)))
-  :- aspen(edit(N, S)),
-		 aspen(node_in_fstring(S, node(InsertNode))),
-		 aspen(edit(node(TargetNode), S')),
-		 edit(N, S) != edit(node(TargetNode), S'),
-		 aspen(return(query(descendant(InsertNode)), TargetNode)).
+aspen(comes_before(replace(node(TargetNode), S'), Edit)) :-
+  aspen(Edit),
+  Edit = (replace(N, S);append(N, S)),
+  aspen(node_in_template(S, node(InsertNode))),
+  aspen(replace(node(TargetNode), S')),
+  Edit != replace(node(TargetNode), S'),
+  aspen(return(query(descendant(InsertNode)), TargetNode)).
 
 % query the paths of node ids that occur as targets or as inserts
-% in fstrings, so that they can be used by aspen to find the
+% in templates, so that they can be used by aspen to find the
 % corresponding tree-sitter nodes for processing.
 
 % targets
-aspen(query(path_of_node(N))) :- aspen(log(node(N), _, _)).
-aspen(query(path_of_node(N))) :- aspen(exception(node(N), _)).
-aspen(query(path_of_node(N))) :- aspen(edit(node(N), _)).
+aspen(query(path_of_node(N))) :-
+  aspen(log(node(N), _, _);exception(node(N), _);
+        replace(node(N), _);append(node(N), _)).
 
-% fstring inserts
-aspen(item_in_fstring(Fstring, Fstring)) :- aspen(log(_, _, Fstring)).
-aspen(item_in_fstring(Fstring, Fstring)) :- aspen(log(_, Fstring)).
-aspen(item_in_fstring(Fstring, Fstring)) :- aspen(print(Fstring)).
-aspen(item_in_fstring(Fstring, Fstring)) :- aspen(print(Fstring, _)).
+% template inserts
+aspen(item_in_template(Template, Template)) :-
+  aspen(log(_, _, Template);log(_, Template);print(Template);print(Template, _);
+     	exception(_, Template);exception(Template)).
 
-aspen(item_in_fstring(Fstring, Fstring)) :- aspen(exception(_, Fstring)).
-aspen(item_in_fstring(Fstring, Fstring)) :- aspen(exception(Fstring)).
-
-aspen(query(path_of_node(Node))) :- aspen(node_in_fstring(_, node(Node))).
+aspen(query(path_of_node(Node))) :- aspen(node_in_template(_, node(Node))).
