@@ -112,3 +112,38 @@ class TestMetaAsp(AspenTestCase):
                 )
             ],
         )
+
+    def test_aspcore2_choice_lower_bound_sugar(self) -> None:
+        """Test translation of choice rules lower bound to upper bound"""
+        self.assert_transform_isomorphic(
+            language=aspcore2_lang,
+            sources=["1 <= {a;b}."],
+            meta_files=[encoding_dir / "aspcore2_choice_lower_sugar.lp"],
+            initial_program=("aspcore_choice_rewrite_lower", ()),
+            expected_sources=["{ a;b } >= 1."],
+        )
+
+    def test_aspcore2_choice_double_bound_sugar(self) -> None:
+        """Test translation of choice rules lower and upper bound"""
+        self.assert_transform_isomorphic(
+            language=aspcore2_lang,
+            sources=["1 <= {a;b} < 2 :- c."],
+            meta_files=[encoding_dir / "aspcore2_choice_lower_sugar.lp"],
+            initial_program=("aspcore_choice_double_bound", ()),
+            expected_sources=["1 <= { a;b } :- c.\n{ a;b } < 2 :- c."],
+        )
+
+    def test_aspcore2_choice_bound_sugar(self) -> None:
+        """Test translation of choice rule bounds to only choice rules
+        with upper bound."""
+        self.assert_transform_isomorphic(
+            language=aspcore2_lang,
+            sources=["1 <= {a;b} < 2 :- c."],
+            meta_files=[encoding_dir / "aspcore2_choice_lower_sugar.lp"],
+            meta_string=(
+                "#program aspcore_choice_double_bound."
+                'aspen(next_program("aspcore_choice_rewrite_lower",())).'
+            ),
+            initial_program=("aspcore_choice_double_bound", ()),
+            expected_sources=["{ a;b } >= 1 :- c.\n{ a;b } < 2 :- c."],
+        )
