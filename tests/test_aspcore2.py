@@ -43,7 +43,7 @@ class TestMetaAsp(AspenTestCase):
         """Test detection of safety on safe rule. The variable S is
         safe, as both X and T are global, and as such the equation
         defining S in the aggregate element is bound."""
-        source_str = "p(X, Y, Z) :- q(X), Y = X + 2, Z = X + Y."
+        source_str = "p(X, Y, Z) :- q(X), X = s(Y), f(Z,1) = X + Y."
         self.assert_transform_isomorphic(
             language=aspcore2_lang,
             sources=[source_str],
