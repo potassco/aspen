@@ -59,8 +59,8 @@ class TestMetaAsp(AspenTestCase):
 
         self.assert_transform_raises(
             message_regex=(
-                r"s\(0\):1:34-35: Variable 'S' is unsafe.\n"
-                r"s\(0\):1:21-22: Variable 'S' is unsafe."
+                r"s\(0\):1:21-22: Variable 'S' is unsafe.\n"
+                r"s\(0\):1:34-35: Variable 'S' is unsafe."
             ),
             language=aspcore2_lang,
             sources=[source_str],

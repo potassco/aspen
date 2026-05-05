@@ -21,7 +21,7 @@ atoms(S,A) :- type(S,"aggregate_element"), child(S,NLS),                     %%#
 negated(A) :- atoms(_,A), next_sibling(N,A), type(N,"naf").                  %%#(\label{lst:safe:neg}#)
 
 desc(S,S) :- atoms(S,_).                                                     %%#(\label{lst:safe:desc-start}#)
-desc(binop,B) :- type(B,"binary_operation").
+desc(arith,B) :- type(B,("binary_operation";"unary_operation")).
 desc(T,T;U,U) :- eq(A,T,U).
 desc(A,A) :- type(A,"classical_atom").
 desc(A,C) :- desc(A,P), child(P,C).                                          %%#(\label{lst:safe:desc-end}#)
@@ -37,14 +37,15 @@ scope(V,"local") :- var(V), not scope(V,"global").                           %%#
 binds(S,A,V') :- binds(S,A,V), var(V,N), var(V',N), desc(S,V').              %%#(\label{lst:safe:binds-shared-name}#)
 
 binds(S,A,V) :- atoms(S,A), type(A,"classical_atom"), not negated(A),        %%#(\label{lst:safe:binds-classic}#)
-  var(V), not desc(binop,V), desc(A,V).
+  var(V), not desc(arith,V), desc(A,V).
 
 other_binds(S,A,V) :- atoms(S,A), not negated(A), eq(A,T,_),                  %%#(\label{lst:safe:binds-eq-other-start}#)
   desc(T,V), var(V), binds(S,A',V), A'!=A.                                  %%#(\label{lst:safe:binds-eq-other-end}#)
 
 binds(S,A,V) :- atoms(S,A), not negated(A), eq(A,T,U), desc(U,V), var(V),  %%#(\label{lst:safe:binds-eq-start}#)
-  scope(V,C), not desc(binop,V),
+  scope(V,C), not desc(arith,V),
   other_binds(S,A,V'): var(V'), scope(V',C), V'!=V, desc(T,V').            %%#(\label{lst:safe:binds-eq-end}#)
 
-aspen(exception(node(V),format("Variable '{}' is unsafe.",(node(V),())))) :- %%#(\label{lst:safe:aspen-exc-start}#)
-  var(V), not binds(_,_,V).                                                %%#(\label{lst:safe:aspen-exc-end}#)
+aspen(exception(node(S),format("Unsafe variables in:\n{}",(node(S),())));   %%#(\label{lst:safe:aspen-exc-start}#)
+      exception(node(V),format("Variable '{}' is unsafe.",(node(V),())))) :-
+  stm(S), desc(S,V), var(V), not binds(_,_,V).                               %%#(\label{lst:safe:aspen-exc-end}#)
