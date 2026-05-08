@@ -105,10 +105,10 @@ class TestMetaAsp(AspenTestCase):
             meta_files=[encoding_dir / "aspcore2_choice_sugar.lp"],
             expected_sources=[
                 (
-                    ":- q(1), not #count{ not_choose__(p(a)) : p(a), q(2); "
-                    "not_choose__(-p(a)) : -p(a), q(3) } <= 1.\n"
-                    "p(a) | not_choose__(p(a)) :- q(1), q(2).\n"
-                    "-p(a) | not_choose__(-p(a)) :- q(1), q(3)."
+                    ":- q(1), not #count{ not_choose(p(a)) : p(a), q(2); "
+                    "not_choose(-p(a)) : -p(a), q(3) } <= 1.\n"
+                    "p(a) | not_choose(p(a)) :- q(1), q(2).\n"
+                    "-p(a) | not_choose(-p(a)) :- q(1), q(3)."
                 )
             ],
         )
@@ -118,11 +118,9 @@ class TestMetaAsp(AspenTestCase):
         + disjunctive rules, usage of reserved predicate results in
         exception."""
         self.assert_transform_raises(
-            message_regex=(
-                r"s\(0\):1:42-57: Predicate not_choose__/1 is system reserved."
-            ),
+            message_regex=(r"s\(0\):1:42-55: Predicate not_choose/1 is system reserved."),
             language=aspcore2_lang,
-            sources=["{p(a) : q(2); -p(a) : q(3)} <= 1 :- q(1). not_choose__(a)."],
+            sources=["{p(a) : q(2); -p(a) : q(3)} <= 1 :- q(1). not_choose(a)."],
             meta_files=[encoding_dir / "aspcore2_choice_sugar.lp"],
         )
 
