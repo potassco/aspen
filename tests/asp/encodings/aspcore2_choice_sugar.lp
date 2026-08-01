@@ -1,5 +1,5 @@
 #include "../../../src/aspen/asp/utils/generic/raise_syntax_error.lp".    %%#(\label{lst:choice:include-start}#)
-#include "../../../src/aspen/asp/utils/generic/derived_predicates/named_child_index.lp".
+#include "../../../src/aspen/asp/utils/clingo/derived_predicates/named_child_index.lp".
 #include "../../../src/aspen/asp/utils/generic/queries/make_list.lp".
 
 #include "../../../src/aspen/asp/utils/aspcore2/derived_predicates/symbol_signature.lp". %%#(\label{lst:choice:include-end}#)

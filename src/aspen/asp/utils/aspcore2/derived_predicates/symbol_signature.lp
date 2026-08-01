@@ -1,4 +1,4 @@
-#include "../../generic/derived_predicates/named_child_index.lp".
+#include "./named_child_index.lp".
 
 symbol(N) :- type(N,("classical_atom";"function")).
 

@@ -1,4 +1,4 @@
-#include "../../../src/aspen/asp/utils/generic/derived_predicates/named_child_index.lp".
+#include "../../../src/aspen/asp/utils/aspcore2/derived_predicates/named_child_index.lp".
 
 #show named_child_index/2.
 

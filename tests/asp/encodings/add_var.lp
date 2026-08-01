@@ -1,4 +1,4 @@
-#include "../../../src/aspen/asp/utils/generic/derived_predicates/named_child_index.lp".
+#include "../../../src/aspen/asp/utils/clingo/derived_predicates/named_child_index.lp".
 
 #program add_var_to_atoms(var).
 
