@@ -1,10 +1,10 @@
 #type dummy {
-		expressions: {
-				&foo/0;
-		};
-    macros: {
-				&foo: &bar;
-		};
+  expressions: {
+    &foo/0;
+  };
+  macros: {
+    &foo: &bar;
+  };
 }.
 
 &p(&q(1,a);&z;#sup) : not -&g.
