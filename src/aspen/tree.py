@@ -665,7 +665,7 @@ class AspenTree:  # pylint: disable=too-many-instance-attributes
                 edit_range = calc_node_edit_range(target_node, insert_bytes)
             elif symb.match("append", 2):
                 edit_range = calc_node_append_range(target_node, insert_bytes)
-            else:
+            else:  # nocoverage
                 raise RuntimeError("Code should be unreachable.")
             target_source.source_bytes = edit_tree(
                 target_source.tree,

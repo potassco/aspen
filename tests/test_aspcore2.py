@@ -1,6 +1,8 @@
+"""Test for aspcore2 applications of aspen."""
+
 from aspen.utils.testing import AspenTestCase
 
-from .common import aspcore2_lang, encoding_dir, input_dir, output_dir
+from .common import aspcore2_lang, encoding_dir
 
 
 class TestMetaAsp(AspenTestCase):
