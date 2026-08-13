@@ -10,6 +10,8 @@ from aspen.utils.testing import AspenTestCase
 
 from .common import encoding_dir, input_dir, metasp_lang, output_dir
 
+metasp_enc_dir = encoding_dir / "metasp"
+
 remove_amp_program = ("metasp_remove_ampersand", ())
 preprocess_program = ("metasp_preprocess", ())
 
@@ -24,7 +26,7 @@ class TestMetaAsp(AspenTestCase):
         self.assert_transform_isomorphic(
             language=metasp_lang,
             sources=[input_dir / "metasp_ids.lp"],
-            meta_files=[encoding_dir / "metasp_remove_ampersand.lp"],
+            meta_files=[metasp_enc_dir / "metasp_remove_ampersand.lp"],
             expected_sources=[output_dir / "metasp_ids.lp"],
             initial_program=remove_amp_program,
         )
@@ -38,7 +40,7 @@ class TestMetaAsp(AspenTestCase):
             tree.parse(input_dir / "telingo_type.lp")
             tree.textio_symbols[Function("fact_file", [])] = buf
             tree.transform(
-                meta_files=[encoding_dir / "metasp_generate_type_facts.lp"],
+                meta_files=[metasp_enc_dir / "metasp_generate_type_facts.lp"],
                 initial_program=preprocess_program,
             )
             facts_str = buf.getvalue().strip().replace("&", "__")
@@ -56,8 +58,8 @@ class TestMetaAsp(AspenTestCase):
         source = tree.sources[s]
         tree.transform(
             meta_files=[
-                encoding_dir / "metasp_main.lp",
-                encoding_dir / "metasp_exceptions.lp",
+                metasp_enc_dir / "metasp_main.lp",
+                metasp_enc_dir / "metasp_exceptions.lp",
             ],
             initial_program=preprocess_program,
         )
@@ -84,8 +86,8 @@ class TestMetaAsp(AspenTestCase):
         source = tree.sources[s]
         tree.transform(
             meta_files=[
-                encoding_dir / "metasp_main.lp",
-                encoding_dir / "metasp_exceptions.lp",
+                metasp_enc_dir / "metasp_main.lp",
+                metasp_enc_dir / "metasp_exceptions.lp",
             ],
             initial_program=preprocess_program,
         )
@@ -113,8 +115,8 @@ class TestMetaAsp(AspenTestCase):
             language=metasp_lang,
             sources=[input_dir / "metasp_bad_syntax.lp", input_dir / "telingo_type.lp"],
             meta_files=[
-                encoding_dir / "metasp_main.lp",
-                encoding_dir / "metasp_exceptions.lp",
+                metasp_enc_dir / "metasp_main.lp",
+                metasp_enc_dir / "metasp_exceptions.lp",
             ],
             initial_program=preprocess_program,
         )
@@ -134,7 +136,7 @@ class TestMetaAsp(AspenTestCase):
             tree.parse(input_dir / "metasp_occurrence_head.lp")
             tree.transform(
                 meta_files=[
-                    encoding_dir / "metasp_main.lp",
+                    metasp_enc_dir / "metasp_main.lp",
                 ],
                 meta_string=print_str,
                 initial_program=preprocess_program,
@@ -154,8 +156,8 @@ class TestMetaAsp(AspenTestCase):
             language=metasp_lang,
             sources=["&a."],
             meta_files=[
-                encoding_dir / "metasp_main.lp",
-                encoding_dir / "metasp_exceptions.lp",
+                metasp_enc_dir / "metasp_main.lp",
+                metasp_enc_dir / "metasp_exceptions.lp",
             ],
             initial_program=preprocess_program,
         )
@@ -167,8 +169,8 @@ class TestMetaAsp(AspenTestCase):
             language=metasp_lang,
             sources=[input_dir / "metasp_bad_occurrence.lp"],
             meta_files=[
-                encoding_dir / "metasp_main.lp",
-                encoding_dir / "metasp_exceptions.lp",
+                metasp_enc_dir / "metasp_main.lp",
+                metasp_enc_dir / "metasp_exceptions.lp",
             ],
             initial_program=preprocess_program,
         )
@@ -184,8 +186,8 @@ class TestMetaAsp(AspenTestCase):
             language=metasp_lang,
             sources=[input_dir / "metasp_bad_occurrence.lp"],
             meta_files=[
-                encoding_dir / "metasp_main.lp",
-                encoding_dir / "metasp_exceptions.lp",
+                metasp_enc_dir / "metasp_main.lp",
+                metasp_enc_dir / "metasp_exceptions.lp",
             ],
             initial_program=preprocess_program,
         )
@@ -195,7 +197,7 @@ class TestMetaAsp(AspenTestCase):
         self.assert_transform_isomorphic(
             language=metasp_lang,
             sources=[input_dir / "metasp_rewrite_show.lp"],
-            meta_files=[encoding_dir / "metasp_rewrite_show.lp"],
+            meta_files=[metasp_enc_dir / "metasp_rewrite_show.lp"],
             expected_sources=[output_dir / "metasp_rewrite_show.lp"],
             initial_program=preprocess_program,
         )
@@ -206,8 +208,8 @@ class TestMetaAsp(AspenTestCase):
             language=metasp_lang,
             sources=[input_dir / "metasp_integration.lp", input_dir / "telingo_type.lp"],
             meta_files=[
-                encoding_dir / "metasp_all.lp",
-                encoding_dir / "metasp_remove_ampersand.lp",
+                metasp_enc_dir / "metasp_all.lp",
+                metasp_enc_dir / "metasp_remove_ampersand.lp",
             ],
             meta_string=(
                 "#program metasp_preprocess. "

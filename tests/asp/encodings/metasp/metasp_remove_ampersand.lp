@@ -1,4 +1,4 @@
-#include "../../../src/aspen/asp/utils/generic/queries/descendant.lp".
+#include "../../../../src/aspen/asp/utils/generic/queries/descendant.lp".
 
 #program metasp_remove_ampersand.
 

@@ -1,4 +1,4 @@
-#include "../../../src/aspen/asp/utils/generic/queries/make_list.lp".
+#include "../../../../src/aspen/asp/utils/generic/queries/make_list.lp".
 
 #program metasp_preprocess.
 

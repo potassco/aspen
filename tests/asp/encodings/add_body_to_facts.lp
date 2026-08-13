@@ -1,9 +1,7 @@
-fact(L)
-  :- type(N,"rule"); child(N,L); field(L,"head");
-		 #false: child(N,M), type(M,"body").
+fact(L) :-
+  type(N,"rule"); child(N,L); field(L,"head"); #false: child(N,M), type(M,"body").
 
 aspen(replace(node(L),
-					 format("{0} :- {1}", (node(L),
-																(join("; ", ("b", ("c", ()))),
-																())))))
-  :- fact(L).
+	      format("{0} :- {1}",
+	             (node(L),(join("; ", ("b", ("c", ()))),()))))) :-
+  fact(L).

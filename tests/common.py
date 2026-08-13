@@ -20,4 +20,4 @@ clingo_lang = Language(ts_clingo.language())
 metasp_lang = Language(ts_metasp.language())
 aspcore2_lang = Language(ts_aspcore2.language())
 
-configure_logging(sys.stderr, logging.DEBUG, sys.stderr.isatty())
+configure_logging(sys.stderr, logging.INFO, sys.stderr.isatty())

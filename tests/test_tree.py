@@ -297,7 +297,7 @@ p(1
 
     def test_transform_logs_warn(self) -> None:
         """Test that tranformation logs messages as expected."""
-        source_path = encoding_dir / "a.lp"
+        source_path = input_dir / "a.lp"
         loc_log_str = str(source_path).replace("\\", "\\\\")
         loc_log_str += r":1:0-2: This is a log for node 'a.'."
         self.assert_transform_logs(

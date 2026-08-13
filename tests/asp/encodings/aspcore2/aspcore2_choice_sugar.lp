@@ -1,8 +1,8 @@
-#include "../../../src/aspen/asp/utils/generic/raise_syntax_error.lp".    %%#(\label{lst:choice:include-start}#)
-#include "../../../src/aspen/asp/utils/clingo/derived_predicates/named_child_index.lp".
-#include "../../../src/aspen/asp/utils/generic/queries/make_list.lp".
+#include "../../../../src/aspen/asp/utils/generic/raise_syntax_error.lp".    %%#(\label{lst:choice:include-start}#)
+#include "../../../../src/aspen/asp/utils/clingo/derived_predicates/named_child_index.lp".
+#include "../../../../src/aspen/asp/utils/generic/queries/make_list.lp".
 
-#include "../../../src/aspen/asp/utils/aspcore2/derived_predicates/symbol_signature.lp". %%#(\label{lst:choice:include-end}#)
+#include "../../../../src/aspen/asp/utils/aspcore2/derived_predicates/symbol_signature.lp". %%#(\label{lst:choice:include-end}#)
 
 choice(R,E) :-                                                             %%%%#(\label{lst:choice:choice-start}#)
   type(R,"rule"),
@@ -34,16 +34,16 @@ templ(rule(E),format("{0} | {1} :- {2}{3}.", (node(A),(H,(B,(LS,())))))) :- %%%%
 templ(agg_element(E),format("{0} : {1}{2}",(H,(node(A),(LS,()))))) :-      %%%%#(\label{lst:choice:agg-ele-start}#)
   choice(R,E), e_head(E,A), templ(hat(E),H), templ(cond(E),LS).            %%%%#(\label{lst:choice:agg-ele-end}#)
 
-aspen(query(make_list(agg_elements(R),T,I))) :-                            %%%%#(\label{lst:choice:agg-list-start}#)
-  choice(R,E), named_child_index(E,I), templ(agg_element(E),T).            %%%%#(\label{lst:choice:agg-list-end}#)
+aspen(query(make_list(agg_elements(R),T,I))) :-
+  choice(R,E), named_child_index(E,I), templ(agg_element(E),T).
 
-templ(constraint(R), format(":- {0}, not #count{{ {1} }} {2}.",(B,(J,(U,()))))) :- %%%%#(\label{lst:choice:constraint-start}#)
+templ(constraint(R), format(":- {0}, not #count{{ {1} }} {2}.",(B,(J,(U,()))))) :-
   choice(R,E), templ(body(R),B), templ(upper(R),U),
-  aspen(return(make_list(agg_elements(R)),C)), J=join("; ",C).             %%%%#(\label{lst:choice:constraint-end}#)
+  aspen(return(make_list(agg_elements(R)),C)), J=join("; ",C).
 
-aspen(query(make_list(rules(R), T, I))) :-                                 %%%%#(\label{lst:choice:rules-list-start}#)
-  choice(R,E), named_child_index(E,I), templ(rule(E),T).                   %%%%#(\label{lst:choice:rules-list-end}#)
+aspen(query(make_list(rules(R), T, I))) :-
+  choice(R,E), named_child_index(E,I), templ(rule(E),T).
 
-aspen(replace(node(R),join("\n",(T, C)))) :-                               %%%%#(\label{lst:choice:replace-start}#)
+aspen(replace(node(R),join("\n",(T, C)))) :-
   choice(R,_), aspen(return(make_list(rules(R)), C)),
-  templ(constraint(R),T).                                                  %%%%#(\label{lst:choice:replace-end}#)
+  templ(constraint(R),T).

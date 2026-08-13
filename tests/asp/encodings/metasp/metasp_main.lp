@@ -3,8 +3,8 @@
 #include "./metasp_extract_type_info.lp".
 #include "./metasp_print_externals.lp".
 #include "./metasp_rewrite_show.lp".
-#include "../../../src/aspen/asp/utils/clingo/derived_predicates/symbol_signature.lp".
-#include "../../../src/aspen/asp/utils/clingo/derived_predicates/named_child_index.lp".
+#include "../../../../src/aspen/asp/utils/clingo/derived_predicates/symbol_signature.lp".
+#include "../../../../src/aspen/asp/utils/clingo/derived_predicates/named_child_index.lp".
 
 #program metasp_preprocess.
 

@@ -4,6 +4,8 @@ from aspen.utils.testing import AspenTestCase
 
 from .common import aspcore2_lang, encoding_dir
 
+aspcore2_enc_dir = encoding_dir / "aspcore2"
+
 
 class TestMetaAsp(AspenTestCase):
     """Test suite for metasp-related applications of aspen."""
@@ -15,7 +17,7 @@ class TestMetaAsp(AspenTestCase):
         self.assert_transform_isomorphic(
             language=aspcore2_lang,
             sources=["p(list(1,2,3))."],
-            meta_files=[encoding_dir / "aspcore2_list_syntax.lp"],
+            meta_files=[aspcore2_enc_dir / "aspcore2_list_syntax.lp"],
             expected_sources=["p(cons(1, cons(2, cons(3, nil))))."],
         )
 
@@ -25,7 +27,7 @@ class TestMetaAsp(AspenTestCase):
         self.assert_transform_isomorphic(
             language=aspcore2_lang,
             sources=[source_str],
-            meta_files=[encoding_dir / "aspcore2_safety.lp"],
+            meta_files=[aspcore2_enc_dir / "aspcore2_safety.lp"],
             expected_sources=[source_str],
         )
 
@@ -37,7 +39,7 @@ class TestMetaAsp(AspenTestCase):
         self.assert_transform_isomorphic(
             language=aspcore2_lang,
             sources=[source_str],
-            meta_files=[encoding_dir / "aspcore2_safety.lp"],
+            meta_files=[aspcore2_enc_dir / "aspcore2_safety.lp"],
             expected_sources=[source_str],
         )
 
@@ -49,7 +51,7 @@ class TestMetaAsp(AspenTestCase):
         self.assert_transform_isomorphic(
             language=aspcore2_lang,
             sources=[source_str],
-            meta_files=[encoding_dir / "aspcore2_safety.lp"],
+            meta_files=[aspcore2_enc_dir / "aspcore2_safety.lp"],
             expected_sources=[source_str],
         )
 
@@ -66,7 +68,7 @@ class TestMetaAsp(AspenTestCase):
             ),
             language=aspcore2_lang,
             sources=[source_str],
-            meta_files=[encoding_dir / "aspcore2_safety.lp"],
+            meta_files=[aspcore2_enc_dir / "aspcore2_safety.lp"],
         )
 
     def test_aspcore2_safety_unsafe2(self) -> None:
@@ -81,7 +83,7 @@ class TestMetaAsp(AspenTestCase):
             ),
             language=aspcore2_lang,
             sources=[source_str],
-            meta_files=[encoding_dir / "aspcore2_safety.lp"],
+            meta_files=[aspcore2_enc_dir / "aspcore2_safety.lp"],
         )
 
     def test_aspcore2_safety_unsafe3(self) -> None:
@@ -96,7 +98,7 @@ class TestMetaAsp(AspenTestCase):
             ),
             language=aspcore2_lang,
             sources=[source_str],
-            meta_files=[encoding_dir / "aspcore2_safety.lp"],
+            meta_files=[aspcore2_enc_dir / "aspcore2_safety.lp"],
         )
 
     def test_aspcore2_choice_sugar(self) -> None:
@@ -104,7 +106,7 @@ class TestMetaAsp(AspenTestCase):
         self.assert_transform_isomorphic(
             language=aspcore2_lang,
             sources=["{p(a) : q(2); -p(a) : q(3)} <= 1 :- q(1)."],
-            meta_files=[encoding_dir / "aspcore2_choice_sugar.lp"],
+            meta_files=[aspcore2_enc_dir / "aspcore2_choice_sugar.lp"],
             expected_sources=[
                 (
                     ":- q(1), not #count{ not_choose(p(a)) : p(a), q(2); "
@@ -123,7 +125,7 @@ class TestMetaAsp(AspenTestCase):
             message_regex=(r"s\(0\):1:42-55: Predicate not_choose/1 is system reserved."),
             language=aspcore2_lang,
             sources=["{p(a) : q(2); -p(a) : q(3)} <= 1 :- q(1). not_choose(a)."],
-            meta_files=[encoding_dir / "aspcore2_choice_sugar.lp"],
+            meta_files=[aspcore2_enc_dir / "aspcore2_choice_sugar.lp"],
         )
 
     def test_aspcore2_choice_lower_bound_sugar(self) -> None:
@@ -131,7 +133,7 @@ class TestMetaAsp(AspenTestCase):
         self.assert_transform_isomorphic(
             language=aspcore2_lang,
             sources=["1 <= {a;b}."],
-            meta_files=[encoding_dir / "aspcore2_choice_lower_sugar.lp"],
+            meta_files=[aspcore2_enc_dir / "aspcore2_choice_lower_sugar.lp"],
             initial_program=("aspcore_choice_rewrite_lower", ()),
             expected_sources=[" {a;b} >= 1."],
         )
@@ -141,7 +143,7 @@ class TestMetaAsp(AspenTestCase):
         self.assert_transform_isomorphic(
             language=aspcore2_lang,
             sources=["1 <= {a;b} < 2 :- c."],
-            meta_files=[encoding_dir / "aspcore2_choice_lower_sugar.lp"],
+            meta_files=[aspcore2_enc_dir / "aspcore2_choice_lower_sugar.lp"],
             initial_program=("aspcore_choice_double_bound", ()),
             expected_sources=["1 <= { a;b } :- c.\n{ a;b } < 2 :- c."],
         )
@@ -152,7 +154,7 @@ class TestMetaAsp(AspenTestCase):
         self.assert_transform_isomorphic(
             language=aspcore2_lang,
             sources=["1 <= {a;b} < 2 :- c."],
-            meta_files=[encoding_dir / "aspcore2_choice_lower_sugar.lp"],
+            meta_files=[aspcore2_enc_dir / "aspcore2_choice_lower_sugar.lp"],
             meta_string=(
                 "#program aspcore_choice_double_bound."
                 'aspen(next_program("aspcore_choice_rewrite_lower",())).'
