@@ -21,32 +21,32 @@ class TestAspenTree(AspenTestCase):  # pylint: disable=too-many-public-methods
         tree = AspenTree(default_language=clingo_lang)
         good_path = parse_term("(1, (2, ()))")
         self.assertListEqual(
-            tree._path2py(good_path), [1, 2]  # pylint: disable=protected-access
+            tree._path_symb2py(good_path), [1, 2]  # pylint: disable=protected-access
         )
         inverted_path = parse_term("(((), 2), 1)")
         re_str = r"Malformed path symbol"
         with self.assertRaisesRegex(ValueError, re_str):
-            tree._path2py(inverted_path)  # pylint: disable=protected-access
+            tree._path_symb2py(inverted_path)  # pylint: disable=protected-access
         bad_element_path = parse_term("(a, (b, ()))")
         with self.assertRaisesRegex(ValueError, re_str):
-            tree._path2py(bad_element_path)  # pylint: disable=protected-access
+            tree._path_symb2py(bad_element_path)  # pylint: disable=protected-access
 
     def test_conslist2pylist(self) -> None:
         """Test conversion of symbolic cons list to python list"""
         tree = AspenTree(default_language=clingo_lang)
         good_path = parse_term("(1, (2, ()))")
         self.assertListEqual(
-            tree._cons_list2py(good_path),  # pylint: disable=protected-access
+            tree._cons_list_symb2py(good_path),  # pylint: disable=protected-access
             [Number(1), Number(2)],
         )
         inverted_path = parse_term("(((), 2), 1)")
         re_str = r"Expected tuple of arity 2"
         with self.assertRaisesRegex(ValueError, re_str):
-            tree._cons_list2py(inverted_path)  # pylint: disable=protected-access
+            tree._cons_list_symb2py(inverted_path)  # pylint: disable=protected-access
         const_cons_list = parse_term("(a, (b, ()))")
         const_py_list = [Function("a", []), Function("b", [])]
         self.assertListEqual(
-            tree._cons_list2py(const_cons_list),  # pylint: disable=protected-access
+            tree._cons_list_symb2py(const_cons_list),  # pylint: disable=protected-access
             const_py_list,
         )
 
@@ -56,19 +56,17 @@ class TestAspenTree(AspenTestCase):  # pylint: disable=too-many-public-methods
         source = tree.parse("a(1).")
         node = get_node_at_path(tree.sources[source].tree, [0, 0, 0, 2], reverse=True)
         expected_path_symb = parse_term("(0, (0, (0, (2, ()))))")
-        path_symb = tree._py_node2path_symb(node)  # pylint: disable=protected-access
+        path_symb = tree._node2path_symb(node)  # pylint: disable=protected-access
         self.assertEqual(path_symb, expected_path_symb)
 
-    def test_source_path_symb2node(self) -> None:
+    def test_source_path_symb2ts(self) -> None:
         """Test conversion of node id to tree sitter tree node."""
         tree = AspenTree(default_language=clingo_lang)
         source_id = parse_term("test(42)")
         tree.parse("a.", identifier=source_id)
         source_path_syb = parse_term("(test(42), (0, ( 0, ())))")
-        source, node = (
-            tree._source_path2py_source_node(  # pylint: disable=protected-access
-                source_path_syb
-            )
+        source, node = tree._source_path_symb2ts(  # pylint: disable=protected-access
+            source_path_syb
         )
         expected_source = tree.sources[source_id]
         self.assertEqual(source, expected_source)
@@ -78,13 +76,13 @@ class TestAspenTree(AspenTestCase):  # pylint: disable=too-many-public-methods
         self.assertEqual(node, expected_node)
         unknown_source_node_id = parse_term("(foo(41),())")
         with self.assertRaisesRegex(ValueError, r"Unknown source symbol."):
-            tree._source_path2py_source_node(  # pylint: disable=protected-access
+            tree._source_path_symb2ts(  # pylint: disable=protected-access
                 unknown_source_node_id
             )
         non_existent_path_node_id = parse_term("(test(42),(2, (0, ())))")
         regex_str = r"No node found in tree at path"
         with self.assertRaisesRegex(ValueError, regex_str):
-            tree._source_path2py_source_node(  # pylint: disable=protected-access
+            tree._source_path_symb2ts(  # pylint: disable=protected-access
                 non_existent_path_node_id
             )
 

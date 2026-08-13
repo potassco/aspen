@@ -112,7 +112,7 @@ class AspenTree:  # pylint: disable=too-many-instance-attributes
         self._id_generator = id_counter() if id_generator is None else id_generator
         self._node_id2source_path: dict[Symbol, Symbol] = {}
 
-    def _path2py(self, path_symb: Symbol) -> list[int]:
+    def _path_symb2py(self, path_symb: Symbol) -> list[int]:
         """Convert path expression from symbolic to list form."""
         l: list[int] = []
         nil = Tuple_([])
@@ -126,7 +126,7 @@ class AspenTree:  # pylint: disable=too-many-instance-attributes
             path_symb = path_symb.arguments[1]
         return l
 
-    def _cons_list2py(self, l: Symbol) -> list[Symbol]:
+    def _cons_list_symb2py(self, l: Symbol) -> list[Symbol]:
         """Convert symbolic cons list consisting of nested tuples into
         a python list of symbols."""
         l_py: list[Symbol] = []
@@ -138,7 +138,7 @@ class AspenTree:  # pylint: disable=too-many-instance-attributes
             l = l.arguments[1]
         return l_py
 
-    def _py_node2path_symb(self, node: ts.Node) -> Symbol:
+    def _node2path_symb(self, node: ts.Node) -> Symbol:
         """Given a tree-sitter node, calculate the corresponding path symbol."""
         path = get_path_of_node(node)
         path_symb = Tuple_([])
@@ -146,9 +146,7 @@ class AspenTree:  # pylint: disable=too-many-instance-attributes
             path_symb = Tuple_([Number(idx), path_symb])
         return path_symb
 
-    def _source_path2py_source_node(
-        self, source_path_symb: Symbol
-    ) -> tuple[Source, ts.Node]:
+    def _source_path_symb2ts(self, source_path_symb: Symbol) -> tuple[Source, ts.Node]:
         """Retrieve tree-sitter node from node identifier symbol."""
         source_symb, path_symb = (
             source_path_symb.arguments[0],
@@ -157,7 +155,7 @@ class AspenTree:  # pylint: disable=too-many-instance-attributes
         logger.debug(
             "Retrieving node from tree of source %s at path %s.", source_symb, path_symb
         )
-        path_list = self._path2py(path_symb)
+        path_list = self._path_symb2py(path_symb)
         try:
             source = self.sources[source_symb]
         except KeyError as exc:
@@ -459,7 +457,7 @@ class AspenTree:  # pylint: disable=too-many-instance-attributes
             # case when len(symb.arguments) == 3
             else:
                 log_level_symb = symb.arguments[1]
-                source, node = self._source_path2py_source_node(
+                source, node = self._source_path_symb2ts(
                     self._node_id2source_path[symb.arguments[0]]
                 )
                 loc_prefix = self._get_loc_prefix_from_source_node(source, node)
@@ -542,7 +540,7 @@ class AspenTree:  # pylint: disable=too-many-instance-attributes
                 text = self._template_symb2str(symb.arguments[0])
             # case when len(symb.arguments) == 2
             else:
-                source, node = self._source_path2py_source_node(
+                source, node = self._source_path_symb2ts(
                     self._node_id2source_path[symb.arguments[0]]
                 )
                 loc_prefix = self._get_loc_prefix_from_source_node(source, node)
@@ -558,9 +556,7 @@ class AspenTree:  # pylint: disable=too-many-instance-attributes
             py_str = symb.string
         elif symb.match("node", 1):
             try:
-                source, node = self._source_path2py_source_node(
-                    self._node_id2source_path[symb]
-                )
+                source, node = self._source_path_symb2ts(self._node_id2source_path[symb])
                 start, end = node.start_byte, node.end_byte
                 py_str = source.source_bytes[start:end].decode(source.encoding)
             # if the tuple is not a node id
@@ -574,7 +570,7 @@ class AspenTree:  # pylint: disable=too-many-instance-attributes
             and symb.arguments[1].match("", 2)
         ):
             format_string = symb.arguments[0].string
-            inserts = self._cons_list2py(symb.arguments[1])
+            inserts = self._cons_list_symb2py(symb.arguments[1])
             insert_strs: list[str] = [self._template_symb2str(s) for s in inserts]
             py_str = format_string.format(*insert_strs)
         elif (
@@ -583,7 +579,7 @@ class AspenTree:  # pylint: disable=too-many-instance-attributes
             and (symb.arguments[1].match("", 2) or symb.arguments[1].match("", 0))
         ):
             join_str = symb.arguments[0].string
-            inserts = self._cons_list2py(symb.arguments[1])
+            inserts = self._cons_list_symb2py(symb.arguments[1])
             insert_strs = [self._template_symb2str(s) for s in inserts]
             py_str = join_str.join(insert_strs)
         else:
@@ -646,7 +642,7 @@ class AspenTree:  # pylint: disable=too-many-instance-attributes
         for symb in edit_symbols:
             logger.info("Processing edit symbol: %s.", symb)
             template_symb = symb.arguments[1]
-            target_source, target_node = self._source_path2py_source_node(
+            target_source, target_node = self._source_path_symb2ts(
                 self._node_id2source_path[symb.arguments[0]]
             )
             insert_text = self._template_symb2str(template_symb)
@@ -752,7 +748,7 @@ class AspenTree:  # pylint: disable=too-many-instance-attributes
                 if logger.isEnabledFor(logging.DEBUG):  # nocoverage
                     self._log_change(change)
                 if len(old_siblings) > 0:
-                    first_old_sib_path = self._py_node2path_symb(old_siblings[0])
+                    first_old_sib_path = self._node2path_symb(old_siblings[0])
                     query = Function(
                         "re_reify_siblings",
                         [source_symb, first_old_sib_path, Number(len(old_siblings))],
