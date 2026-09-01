@@ -253,6 +253,11 @@ def _diff_children(
         if not old_gap and new_gap:
             # pure insertion right before this reused node: fold the
             # node in as an anchor, in place of excluding it as unchanged
+            # note: in practice, I could not produce an instance where this
+            # happens; it seems that a pure insertion always causes the
+            # previous node before to get a new id, eveng though it is unchanged.
+            # We might remove this code in the future, but leave it here for
+            # now to be defensive
             old_gap = [old_children[old_idx]]
             new_gap = new_gap + [new_children[new_idx]]
             last_fold_was_used = True
@@ -296,8 +301,10 @@ def get_tree_changes(old_tree: ts.Tree, new_tree: ts.Tree) -> list[Change]:
     new tree.
 
     """
-    if old_tree.root_node.id == new_tree.root_node.id:
-        return []
+    # note: when re-parsing, the root node id is always new, so I think the branch
+    # below is not needed.
+    # if old_tree.root_node.id == new_tree.root_node.id:
+    #     return []
     if old_tree.root_node.type != new_tree.root_node.type:
         # The edit left text that tree-sitter cannot parse into the
         # expected top-level grammar rule at all (e.g. an unterminated
