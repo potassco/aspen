@@ -47,26 +47,10 @@ class TestTreeSitterUtils(TestCaseWithRedirectedLogs):
             return []
         path, length = descriptor
         sibling = get_node_at_path(tree, path, reverse=True)
-        # this case analysis should not be necessary, but
-        # tree sitter is a bit buggy, and in test case
-        # test_changes_range_edit3 this branch gives
-        # incorrect result
-        if sibling.parent is None:  # nocoverage
-            siblings = [sibling]
-            length -= 1
-            while length > 0:
-                siblings.append(sibling)
-                length -= 1
-                next_sib = sibling.next_sibling
-                if next_sib is not None:
-                    sibling = next_sib
-                else:
-                    break
-        else:
-            parent = sibling.parent
-            idx = parent.children.index(sibling)
-            siblings = parent.children[idx : idx + length]
-        return siblings
+        parent = sibling.parent
+        assert parent is not None
+        idx = parent.children.index(sibling)
+        return parent.children[idx : idx + length]
 
     def get_changes_from_descriptors(
         self,
@@ -152,7 +136,7 @@ class TestTreeSitterUtils(TestCaseWithRedirectedLogs):
                 ),
             ],
             expected_final_bytes=b"a(1). z :- x.",
-            expected_change_descriptors=[(([1, 2], 1), ([1, 2], 1))],
+            expected_change_descriptors=[(([1, 1], 3), ([1, 1], 3))],
         )
 
     def test_changes_range_edit2(self) -> None:
@@ -194,7 +178,7 @@ class TestTreeSitterUtils(TestCaseWithRedirectedLogs):
                 )
             ],
             expected_final_bytes=b"a(1). z .",
-            expected_change_descriptors=[(([1, 1], 2), None)],
+            expected_change_descriptors=[(([1, 0], 4), ([1, 0], 2))],
         )
 
     def test_changes_multiple_range_edit_overlap(self) -> None:
@@ -244,7 +228,7 @@ class TestTreeSitterUtils(TestCaseWithRedirectedLogs):
             input_bytes=b"a(1). z :- x",
             edits=[([0, 0, 0, 2], "append", b"1, 2; 3, 4")],
             expected_final_bytes=b"a(11, 2; 3, 4). z :- x",
-            expected_change_descriptors=[(([0, 0, 0, 2], 1), ([0, 0, 0, 2], 3))],
+            expected_change_descriptors=[(([0], 2), ([0], 2))],
         )
 
     def test_changes_node_append3(self) -> None:
@@ -253,7 +237,7 @@ class TestTreeSitterUtils(TestCaseWithRedirectedLogs):
             input_bytes=b"a(1). z :- x",
             edits=[([0, 0, 0], "append", b"; b. p")],
             expected_final_bytes=b"a(1); b. p. z :- x",
-            expected_change_descriptors=[(([0], 1), ([0], 2))],
+            expected_change_descriptors=[(([0], 2), ([0], 3))],
         )
 
     def test_changes_node_append4(self) -> None:
@@ -262,7 +246,7 @@ class TestTreeSitterUtils(TestCaseWithRedirectedLogs):
             input_bytes=b"a(1). z :- x",
             edits=[([0, 0, 0, 2], "append", b",2")],
             expected_final_bytes=b"a(1,2). z :- x",
-            expected_change_descriptors=[(([0, 0, 0, 2], 1), ([0, 0, 0, 2], 1))],
+            expected_change_descriptors=[(([0], 2), ([0], 2))],
         )
 
     def test_changes_node_edit1(self) -> None:
@@ -271,16 +255,16 @@ class TestTreeSitterUtils(TestCaseWithRedirectedLogs):
             input_bytes=b"a :- b. z :- x. a.",
             edits=[([1], "edit", b"z :- x. as :- sd.")],
             expected_final_bytes=b"a :- b. z :- x. as :- sd. a.",
-            expected_change_descriptors=[(([1], 1), ([1], 2))],
+            expected_change_descriptors=[(([0], 2), ([0], 3))],
         )
 
     def test_changes_node_edit2(self) -> None:
         """Test that editing node results in expected changes."""
         self.assert_edits_changes_equal(
-            input_bytes=b"aast :- bdsrr. z :- x. a.",
+            input_bytes=b"aast :- bdsrr. z :- x. a. c.",
             edits=[([1], "edit", b"")],
-            expected_final_bytes=b"aast :- bdsrr.  a.",
-            expected_change_descriptors=[(([1], 1), None)],
+            expected_final_bytes=b"aast :- bdsrr.  a. c.",
+            expected_change_descriptors=[(([0], 3), ([0], 2))],
         )
 
     def test_changes_node_edit3(self) -> None:
@@ -289,7 +273,7 @@ class TestTreeSitterUtils(TestCaseWithRedirectedLogs):
             input_bytes=b"aast :- bdsrr. z :- x. a. b.",
             edits=[([1], "edit", b""), ([3], "edit", b"")],
             expected_final_bytes=b"aast :- bdsrr.  a. ",
-            expected_change_descriptors=[(([1], 1), None), (([3], 1), None)],
+            expected_change_descriptors=[(([0], 4), ([0], 2))],
         )
 
     def test_changes_node_edit4(self) -> None:
@@ -298,8 +282,30 @@ class TestTreeSitterUtils(TestCaseWithRedirectedLogs):
             input_bytes=b"a.",
             edits=[([0], "edit", b"")],
             expected_final_bytes=b"",
-            expected_change_descriptors=[(([], 1), None)],
+            expected_change_descriptors=[(([0], 1), None)],
         )
+
+    def test_changes_total_parse_failure_raises(self) -> None:
+        """Test that an edit which leaves the source unparsable (so that
+        the new tree's root itself is an ERROR node, not a source_file)
+        raises, since such a change cannot be expressed as a change to a
+        list of siblings anywhere in the old tree."""
+        parser = Parser(clingo_lang)
+        input_bytes = b"a :- b."
+        old_tree = parser.parse(input_bytes)
+        edit_range = (
+            3,
+            7,
+            3,
+            Point(row=0, column=3),
+            Point(row=0, column=7),
+            Point(row=0, column=3),
+        )
+        current_bytes = edit_tree(old_tree, edit_range, b"", old_source=input_bytes)
+        self.assertEqual(current_bytes, b"a :")
+        new_tree = parser.parse(current_bytes, old_tree)
+        with self.assertRaises(ValueError):
+            get_tree_changes(old_tree, new_tree)
 
     def test_changes_node_edit_multiple_overlap(self) -> None:
         """Test that the detection of changes with multiple edits

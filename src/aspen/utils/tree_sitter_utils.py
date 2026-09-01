@@ -173,123 +173,116 @@ def edit_tree(
     return new_source
 
 
-def _accumulate_changed_nodes(
-    cursor: ts.TreeCursor,
-    acc: list[list[ts.Node]],
-    skip_ranges: Optional[list[tuple[int, int]]] = None,
-) -> bool:
-    """Accumulate sequences of sibling nodes for which all descendants
-    have changes. Return true if node under cursor has changes, does
-    not fall into one of the byte ranges given by the optional
-    skip_ranges, and all the descendands of the node have changes.
-
-    """
-    parent_node = cursor.node
-    assert parent_node is not None
-    if not parent_node.has_changes:
-        return False
-    if skip_ranges is not None and len(skip_ranges) > 0:
-        start, end = parent_node.start_byte, parent_node.end_byte
-        # narrow down skip ranges to the ones that intersect the current node
-        # we can do this, as non-intersecting ranges also will not intersect
-        # any of the current node's children.
-        for range_start, range_end in skip_ranges:
-            if range_start <= start and end <= range_end:
-                return False
-        skip_ranges = [r for r in skip_ranges if r[0] < end and start < r[1]]
-    parent_has_children = cursor.goto_first_child()
-    sibling_exists = parent_has_children
-    siblings_with_all_changed_descs_acc: list[list[ts.Node]] = []
-    siblings_with_all_changed_descs: list[ts.Node] = []
-    num_changed = 0
-    while sibling_exists:
-        child_node = cursor.node
-        assert child_node is not None
-        if _accumulate_changed_nodes(cursor, acc, skip_ranges):
-            num_changed += 1
-            siblings_with_all_changed_descs.append(child_node)
-        else:
-            if len(siblings_with_all_changed_descs) > 0:
-                siblings_with_all_changed_descs_acc.append(
-                    siblings_with_all_changed_descs
-                )
-            siblings_with_all_changed_descs = []
-        sibling_exists = cursor.goto_next_sibling()
-    if parent_has_children:
-        if len(siblings_with_all_changed_descs) > 0:
-            siblings_with_all_changed_descs_acc.append(siblings_with_all_changed_descs)
-        cursor.goto_parent()
-        if num_changed != parent_node.child_count:
-            if len(siblings_with_all_changed_descs_acc) != 0:
-                acc.extend(siblings_with_all_changed_descs_acc)
-            return False
-    return True
-
-
-def find_changed_nodes(
-    tree: ts.Tree, known_changed_ranges: Optional[list[tuple[int, int]]] = None
-) -> list[list[ts.Node]]:
-    """Walk edited tree to find sequences of sibling nodes have been changed via edit.
-
-    A node is considered changed if all of it's descendants have changes."""
-    largest_changed_nodes: list[list[ts.Node]] = []
-    cursor = tree.walk()
-    source_changed = _accumulate_changed_nodes(
-        cursor, largest_changed_nodes, known_changed_ranges
-    )
-    if source_changed:
-        return [[tree.root_node]]
-    return largest_changed_nodes
-
-
-def get_largest_ancestor_with_same_range(node: ts.Node) -> ts.Node:
-    """Get largest ancestor of input node that has the same range."""
-    start, end = node.start_byte, node.end_byte
-    while (
-        node.parent is not None
-        and node.parent.start_byte == start
-        and node.parent.end_byte == end
-    ):
-        node = node.parent
-    return node
-
-
-def get_cover(ancestor_node: ts.Node, range_start: int, range_end: int) -> list[ts.Node]:
-    """Get list of the smallest sibling nodes that that are descendants of
-    anscestor_node and cover the input byte range."""
-    smallest_span_node = ancestor_node.descendant_for_byte_range(range_start, range_end)
-    if smallest_span_node is None:  # nocoverage
-        raise ValueError(
-            f"Expected to find node at byte range {range_start}, {range_end}"
-            " ; found none."
-        )
-    # walk up tree, as in case there are adjacent zero length nodes,
-    # we also want to catch these
-    if (
-        smallest_span_node.start_byte == range_start
-        and smallest_span_node.end_byte == range_end
-    ) or smallest_span_node.child_count == 0:
-        smallest_span_node = get_largest_ancestor_with_same_range(smallest_span_node)
-        smallest_span_node = (
-            smallest_span_node
-            if smallest_span_node.parent is None
-            else smallest_span_node.parent
-        )
-    cover = [
-        child
-        for child in smallest_span_node.children
-        # collect children that intersect the byte range
-        if (range_start < child.end_byte and child.start_byte < range_end)
-    ]
-    return cover
-
-
 Change = tuple[list[ts.Node], list[ts.Node]]
 
 
-def get_tree_changes(  # pylint: disable=too-many-branches
-    old_tree: ts.Tree, new_tree: ts.Tree
+def _find_reused_children(
+    old_children: list[ts.Node], new_children: list[ts.Node]
+) -> list[tuple[int, int]]:
+    """Find pairs of indices (old_idx, new_idx) of children that are
+    literally the same node, reused verbatim across the edit.
+
+    Tree-sitter reuses a node's identity (its ``id``) across an
+    incremental edit and re-parse whenever that node's subtree is
+    unaffected by the edit: "if a new tree is created based on an older
+    tree, and a node from the old tree is reused in the process, then
+    that node will have the same id in both trees" (tree-sitter docs).
+    Two children sharing an id are therefore guaranteed structurally
+    identical, and since edits never reorder siblings, matches occur in
+    the same relative order in both sequences.
+
+    """
+    new_index_by_id = {child.id: idx for idx, child in enumerate(new_children)}
+    matches: list[tuple[int, int]] = []
+    last_new_idx = -1
+    for old_idx, child in enumerate(old_children):
+        new_idx = new_index_by_id.get(child.id)
+        if new_idx is not None and new_idx > last_new_idx:
+            matches.append((old_idx, new_idx))
+            last_new_idx = new_idx
+    return matches
+
+
+def _narrow_change(
+    old_siblings: list[ts.Node], new_siblings: list[ts.Node]
 ) -> list[Change]:
+    """A change consisting of a single old and a single new node of the
+    same grammar type can be described equally well, and more precisely,
+    as a change to that node's children. Descend in that case; otherwise
+    the change cannot be narrowed further."""
+    if (
+        len(old_siblings) == 1
+        and len(new_siblings) == 1
+        and old_siblings[0].child_count > 0
+        and new_siblings[0].child_count > 0
+        and old_siblings[0].type == new_siblings[0].type
+    ):
+        return _diff_children(old_siblings[0], new_siblings[0])
+    return [(old_siblings, new_siblings)]
+
+
+def _diff_children(
+    old_node: ts.Node, new_node: ts.Node, top_level: bool = False
+) -> list[Change]:
+    """Diff the children of two corresponding nodes (nodes occupying the
+    same structural position in the old and new tree, e.g. both roots),
+    returning the changes needed to turn old_node's children into
+    new_node's children.
+
+    A change with an empty list of old siblings describes a pure
+    insertion with no old node to anchor it to; callers of
+    get_tree_changes can only make sense of such a change if it is a
+    plain append at the very end of the whole source (``top_level``),
+    since that is the only position that can be identified without an
+    anchor. Everywhere else, a pure insertion is folded together with
+    one adjacent reused node (which is then reported as changed too,
+    even though only its neighbourhood changed) so that every change has
+    a real node to anchor it to.
+
+    """
+    old_children = old_node.children
+    new_children = new_node.children
+    reused = _find_reused_children(old_children, new_children)
+    changes: list[Change] = []
+    old_pos = new_pos = 0
+    last_fold_was_used = False
+    for old_idx, new_idx in reused:
+        old_gap = old_children[old_pos:old_idx]
+        new_gap = new_children[new_pos:new_idx]
+        last_fold_was_used = False
+        if not old_gap and new_gap:
+            # pure insertion right before this reused node: fold the
+            # node in as an anchor, in place of excluding it as unchanged
+            old_gap = [old_children[old_idx]]
+            new_gap = new_gap + [new_children[new_idx]]
+            last_fold_was_used = True
+        if old_gap or new_gap:
+            changes.extend(_narrow_change(old_gap, new_gap))
+        old_pos, new_pos = old_idx + 1, new_idx + 1
+    # gap after the last reused node
+    old_gap = old_children[old_pos:]
+    new_gap = new_children[new_pos:]
+    if not old_gap and new_gap and not top_level:
+        # trailing pure insertion with no root to fall back on: anchor
+        # it to the last reused node, which is the only one left that
+        # could possibly serve, extending the change it was already
+        # folded into, or folding it in now if it wasn't needed there.
+        if last_fold_was_used:
+            last_old, last_new = changes[-1]
+            changes[-1] = (last_old, last_new + new_gap)
+            old_gap, new_gap = [], []
+        elif reused:
+            last_reused_old, last_reused_new = reused[-1]
+            old_gap = [old_children[last_reused_old]]
+            new_gap = [new_children[last_reused_new]] + new_gap
+        # else: old_node had no children of its own to anchor to; only
+        # reachable when old_node is the (possibly empty) tree root
+    if old_gap or new_gap:
+        changes.extend(_narrow_change(old_gap, new_gap))
+    return changes
+
+
+def get_tree_changes(old_tree: ts.Tree, new_tree: ts.Tree) -> list[Change]:
     """Given an old tree, and a new tree that has just been re-parsed
     from the old one, calculate the changes that need to be made to
     old_tree (and data structures derived from old_tree) to get a tree
@@ -303,80 +296,21 @@ def get_tree_changes(  # pylint: disable=too-many-branches
     new tree.
 
     """
-    changes: list[Change] = []
-    changed_ranges = old_tree.changed_ranges(new_tree)
-    covered_old_ranges: list[tuple[int, int]] = []
-    for r in changed_ranges:
-        start, end = r.start_byte, r.end_byte
-        old_cover = get_cover(old_tree.root_node, start, end)
-        if len(old_cover) > 0:
-            new_cover = get_cover(
-                new_tree.root_node, old_cover[0].start_byte, old_cover[-1].end_byte
-            )
-            old_cover = get_cover(
-                old_tree.root_node, new_cover[0].start_byte, new_cover[-1].end_byte
-            )
-            old_start, old_end = old_cover[0].start_byte, old_cover[-1].end_byte
-        else:
-            new_cover = get_cover(new_tree.root_node, start, end)
-            old_start, old_end = start, end
-        # Sometimes, when deleting the first node, we get two empty covers.
-        # In this case we do not want to add this change, and insted reply on
-        # walking the old tree and checking for changes.
-        # We exit early in this case to not mark old_start, old_end as covered,
-        # so we don't skip over this region when walking the old tree
-        if (old_cover, new_cover) == ([], []):
-            continue
-        covered = False
-        for cr in covered_old_ranges:
-            if cr[0] <= old_start and old_end <= cr[1]:
-                covered = True
-        if not covered:
-            covered_old_ranges.append((old_start, old_end))
-            change = (old_cover, new_cover)
-            changes.append(change)
-    # add additional changes based on walking the old tree and checking
-    # if nodes have changes. This detects some edge cases that the
-    # changed_ranges method fails to detect.
-    has_change_siblings = find_changed_nodes(
-        old_tree, known_changed_ranges=covered_old_ranges
-    )
-    for s in has_change_siblings:
-        start, end = s[0].start_byte, s[-1].end_byte
-        new_cover = get_cover(new_tree.root_node, start, end)
-        if len(new_cover) > 0:
-            s = get_cover(
-                old_tree.root_node, new_cover[0].start_byte, new_cover[-1].end_byte
-            )
-        change = (s, new_cover)
-        if change not in changes:
-            changes.append(change)
-    if len(changes) == 0:
-        return changes
-    changes.sort(
-        key=lambda t: t[0][0].start_byte if len(t[1]) == 0 else t[1][0].start_byte
-    )
-    # we do a final pass to merge adjacent and overlapping changes
-    final: list[tuple[list[ts.Node], list[ts.Node]]] = [changes[0]]
-    for (old_cover, new_cover), (next_old_cover, next_new_cover) in zip(
-        changes, changes[1:]
-    ):
-        if len(new_cover) > 0 and len(next_new_cover) > 0:
-            # case: covers are adjacent
-            if new_cover[-1].next_sibling == next_new_cover[0]:
-                # assert old_cover[-1].next_sibling == next_old_cover[0]
-                final[-1][0].extend(next_old_cover)
-                final[-1][1].extend(next_new_cover)
-            # case: covers overlap
-            elif new_cover[-1].end_byte > next_new_cover[0].start_byte:
-                # assert old_cover[-1].end_byte > next_old_cover[0].start_byte
-                new_idx = new_cover.index(next_new_cover[0])
-                old_idx = old_cover.index(next_old_cover[0])
-                final_old = final[-1][0][:old_idx] + next_old_cover
-                final_new = final[-1][1][:new_idx] + next_new_cover
-                final[-1] = (final_old, final_new)
-            else:
-                final.append((next_old_cover, next_new_cover))
-        else:
-            final.append((next_old_cover, next_new_cover))
-    return final
+    if old_tree.root_node.id == new_tree.root_node.id:
+        return []
+    if old_tree.root_node.type != new_tree.root_node.type:
+        # The edit left text that tree-sitter cannot parse into the
+        # expected top-level grammar rule at all (e.g. an unterminated
+        # rule at the very end of the source), so the *root* node itself
+        # would need replacing - not just some of its children. A
+        # replacement of the root can't be expressed as a change to a
+        # list of siblings (the root has no parent to splice it into),
+        # so this can't be diffed incrementally; the caller needs to
+        # re-reify the whole source instead.
+        raise ValueError(
+            "Old and new tree root nodes have different types "
+            f"({old_tree.root_node.type!r} vs {new_tree.root_node.type!r}); "
+            "the new tree cannot be expressed as sibling-level changes to "
+            "the old tree and must be reified from scratch."
+        )
+    return _diff_children(old_tree.root_node, new_tree.root_node, top_level=True)
