@@ -359,7 +359,7 @@ class AspenTree:  # pylint: disable=too-many-instance-attributes
             self.next_transform_program = None
             control.solve(on_model=self._on_transform_model)
 
-    def _on_transform_model(  # pylint: disable=too-many-branches
+    def _on_transform_model(  # pylint: disable=too-many-branches,too-many-statements
         self, model: Model
     ) -> Literal[False]:
         """Model callback for transformation. Returns False as we only
@@ -376,25 +376,50 @@ class AspenTree:  # pylint: disable=too-many-instance-attributes
         print_symbols: list[Symbol] = []
         exception_symbols: list[Symbol] = []
         for symb in model.symbols(shown=True):
-            if symb.match("aspen", 1):
-                arg = symb.arguments[0]
-                if arg.match("replace", 2) or arg.match("append", 2):
-                    edit_symbols.append(arg)
-                elif arg.match("comes_before", 2):
-                    deps[arg.arguments[1]].append(arg.arguments[0])
-                elif arg.match("next_program", 2):
-                    next_transform_symbols.append(arg)
-                elif arg.match("log", 3) or arg.match("log", 2):
-                    log_symbols.append(arg)
-                elif arg.match("print", 1) or arg.match("print", 2):
-                    print_symbols.append(arg)
-                elif arg.match("exception", 2) or arg.match("exception", 1):
-                    exception_symbols.append(arg)
-                elif arg.match("return", 2) and arg.arguments[0].match("path_of_node", 1):
-                    node_id = arg.arguments[0].arguments[0]
-                    self._node_id2source_path[Function("node", [node_id])] = (
-                        arg.arguments[1]
-                    )
+            # Manually inlined equivalent of chained `symb.match(...)`
+            # calls: each `.match()` re-fetches `.name` and rebuilds
+            # `.arguments` from scratch via clingo's C API, so with an
+            # elif chain this ends up re-entering the C API many times
+            # per shown atom. Fetching `.type`/`.positive`/`.name`/
+            # `.arguments` once and branching on the cached values
+            # avoids that redundant marshalling.
+            if (
+                symb.type != SymbolType.Function
+                or not symb.positive
+                or symb.name != "aspen"
+            ):
+                continue
+            symb_args = symb.arguments
+            if len(symb_args) != 1:  # nocoverage
+                continue
+            arg = symb_args[0]
+            if arg.type != SymbolType.Function or not arg.positive:  # nocoverage
+                continue
+            arg_name = arg.name
+            arg_args = arg.arguments
+            arg_arity = len(arg_args)
+            if arg_arity == 2 and arg_name in ("replace", "append"):
+                edit_symbols.append(arg)
+            elif arg_arity == 2 and arg_name == "comes_before":
+                deps[arg_args[1]].append(arg_args[0])
+            elif arg_arity == 2 and arg_name == "next_program":
+                next_transform_symbols.append(arg)
+            elif arg_name == "log" and arg_arity in (2, 3):
+                log_symbols.append(arg)
+            elif arg_name == "print" and arg_arity in (1, 2):
+                print_symbols.append(arg)
+            elif arg_name == "exception" and arg_arity in (1, 2):
+                exception_symbols.append(arg)
+            elif arg_arity == 2 and arg_name == "return":
+                first = arg_args[0]
+                if (
+                    first.type == SymbolType.Function
+                    and first.positive
+                    and first.name == "path_of_node"
+                    and len(first.arguments) == 1
+                ):
+                    node_id = first.arguments[0]
+                    self._node_id2source_path[Function("node", [node_id])] = arg_args[1]
         if len(next_transform_symbols) > 1:
             raise ValueError(
                 (
@@ -733,7 +758,7 @@ class AspenTree:  # pylint: disable=too-many-instance-attributes
             new_range[1],
         )
 
-    def _re_reify_changed_subtrees(
+    def _re_reify_changed_subtrees(  # pylint: disable=too-many-statements
         self,
         source_changes: dict[Symbol, list[Change]],
     ) -> None:
@@ -791,24 +816,42 @@ class AspenTree:  # pylint: disable=too-many-instance-attributes
                 "next_sibling",
             }
             for symb in model.symbols(shown=True):
+                # See the equivalent comment in _on_transform_model:
+                # cache .type/.positive/.name/.arguments per symbol
+                # instead of re-deriving them via repeated .match()
+                # calls on the same symbol.
                 if (
-                    symb.match("aspen", 1)
-                    and symb.arguments[0].match("return", 2)
-                    and symb.arguments[0].arguments[0].name == "re_reify_siblings"
+                    symb.type != SymbolType.Function
+                    or not symb.positive
+                    or symb.name != "aspen"
                 ):
-                    query = symb.arguments[0].arguments[0]
-                    ret_value = symb.arguments[0].arguments[1]
-                    if ret_value.match("delete", 1):
-                        delete_facts.add(ret_value.arguments[0])
-                    elif (
-                        ret_value.type == SymbolType.Function
-                        and ret_value.positive
-                        and len(ret_value.arguments) == 1
-                        and ret_value.name in related_sib_names
-                    ):
-                        query2_related_dict[query][ret_value.name] = ret_value.arguments[
-                            0
-                        ]
+                    continue
+                symb_args = symb.arguments
+                if len(symb_args) != 1:  # nocoverage
+                    continue
+                ret_symb = symb_args[0]
+                if (
+                    ret_symb.type != SymbolType.Function
+                    or not ret_symb.positive
+                    or ret_symb.name != "return"
+                ):
+                    continue
+                ret_args = ret_symb.arguments
+                if len(ret_args) != 2:  # nocoverage
+                    continue
+                query, ret_value = ret_args
+                if query.name != "re_reify_siblings":
+                    continue
+                if (
+                    ret_value.type != SymbolType.Function or not ret_value.positive
+                ):  # nocoverage
+                    continue
+                rv_name = ret_value.name
+                rv_args = ret_value.arguments
+                if rv_name == "delete" and len(rv_args) == 1:
+                    delete_facts.add(rv_args[0])
+                elif len(rv_args) == 1 and rv_name in related_sib_names:
+                    query2_related_dict[query][rv_name] = rv_args[0]
             return False
 
         control.solve(on_model=_on_re_reify_model)
